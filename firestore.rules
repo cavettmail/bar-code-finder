@@ -3,8 +3,53 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Only people with the team link can reach a team's data: the team id is derived from the
     // secret code in that link, and the list of teams itself can't be read.
-    match /teams/{team}/{collection}/{doc} {
-      allow read, write: if request.auth != null && team.size() >= 24;
+    match /teams/{team} {
+      function signedIn() { return request.auth != null && team.size() >= 24; }
+      function me() { return request.auth.uid; }
+      function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/teams/$(team)/admins/$(me())); }
+      function isRevoked() { return exists(/databases/$(database)/documents/teams/$(team)/revoked/$(me())); }
+      function needsApproval() { return exists(/databases/$(database)/documents/teams/$(team)/config/approvalOn); }
+      function isApproved() { return exists(/databases/$(database)/documents/teams/$(team)/approved/$(me())); }
+      // Anyone on the team whose access hasn't been turned off (and, if approval is on, who was approved).
+      function canUse() { return signedIn() && (isAdmin() || (!isRevoked() && (!needsApproval() || isApproved()))); }
+
+      // Manager sign-in. The password is checked here on Google's side and never appears in the app's code.
+      // Replace ADMIN_PASSWORD with the real password when pasting these rules into the Firebase console.
+      match /admins/{uid} {
+        allow read, delete: if signedIn() && me() == uid;
+        allow create, update: if signedIn() && me() == uid && request.resource.data.pin == "ADMIN_PASSWORD";
+      }
+      // Each phone's name. People write their own; only managers see the whole list.
+      match /members/{uid} {
+        allow read: if isAdmin() || (signedIn() && me() == uid);
+        allow create, update: if signedIn() && me() == uid && !isRevoked() && request.resource.data.name is string && request.resource.data.name.size() <= 40;
+        allow delete: if isAdmin();
+      }
+      match /revoked/{uid} {
+        allow read: if isAdmin() || (signedIn() && me() == uid);
+        allow write: if isAdmin();
+      }
+      match /approved/{uid} {
+        allow read: if isAdmin() || (signedIn() && me() == uid);
+        allow write: if isAdmin();
+      }
+      match /config/{doc} {
+        allow read: if signedIn();
+        allow write: if isAdmin();
+      }
+      // Change history, kept 30 days so a manager can undo changes.
+      match /history/{id} {
+        allow read, update, delete: if isAdmin();
+        allow create: if canUse() && request.resource.data.by == me();
+      }
+      match /histData/{id} {
+        allow read, update, delete: if isAdmin();
+        allow create: if canUse();
+      }
+      // Shared photos, barcodes, No SKU list, item list.
+      match /{collection}/{doc} {
+        allow read, write: if canUse() && !(collection in ["admins", "members", "revoked", "approved", "config", "history", "histData"]);
+      }
     }
   }
 }

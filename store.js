@@ -11,14 +11,15 @@ export async function connect(config, teamId) {
   ]);
   const app = initializeApp(config);
   const a = auth.getAuth(app);
-  await auth.signInAnonymously(a);
+  const cred = await auth.signInAnonymously(a);
   let db;
   try { db = fs.initializeFirestore(app, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }); }
   catch { db = fs.getFirestore(app); }
   const root = `teams/${teamId}`;
+  const full = path => root + "/" + path;
   const docSnap = s => ({ id: s.id, exists: s.exists(), data: () => s.data() });
   const docRef = path => {
-    const r = fs.doc(db, root + "/" + path);
+    const r = fs.doc(db, full(path));
     return {
       id: r.id,
       set: d => fs.setDoc(r, d),
@@ -28,15 +29,35 @@ export async function connect(config, teamId) {
       onSnapshot: (next, err) => fs.onSnapshot(r, s => next(docSnap(s)), err),
     };
   };
-  const query = (path, order) => {
-    const c = fs.collection(db, root + "/" + path);
-    const q = order ? fs.query(c, fs.orderBy(order[0], order[1])) : c;
+  // cons: list of ["where", field, op, value] / ["orderBy", field, dir] / ["limit", n]
+  const query = (path, cons = []) => {
+    const c = fs.collection(db, full(path));
+    const q = cons.length ? fs.query(c, ...cons.map(([k, ...args]) => fs[k](...args))) : c;
+    const snapOf = s => ({ docs: s.docs.map(docSnap), size: s.size, empty: s.empty });
     return {
       doc: id => docRef(path + "/" + (id || fs.doc(c).id)),
       add: async d => { const r = await fs.addDoc(c, d); return docRef(path + "/" + r.id); },
-      orderBy: (f, dir) => query(path, [f, dir || "asc"]),
-      onSnapshot: (next, err) => fs.onSnapshot(q, s => next({ docs: s.docs.map(docSnap), size: s.size, empty: s.empty }), err),
+      orderBy: (f, dir) => query(path, [...cons, ["orderBy", f, dir || "asc"]]),
+      where: (f, op, v) => query(path, [...cons, ["where", f, op, v]]),
+      limit: n => query(path, [...cons, ["limit", n]]),
+      get: async () => snapOf(await fs.getDocs(q)),
+      onSnapshot: (next, err) => fs.onSnapshot(q, s => next(snapOf(s)), err),
     };
   };
-  return { collection: query, doc: docRef };
+  // Several writes that land together or not at all. Paths are relative to the team.
+  const batch = () => {
+    const b = fs.writeBatch(db);
+    return {
+      set(path, d) { b.set(fs.doc(db, full(path)), d); return this; },
+      update(path, d) { b.update(fs.doc(db, full(path)), d); return this; },
+      delete(path) { b.delete(fs.doc(db, full(path))); return this; },
+      commit: () => b.commit(),
+    };
+  };
+  return {
+    collection: query, doc: docRef, batch,
+    uid: cred.user.uid,
+    newId: path => fs.doc(fs.collection(db, full(path))).id,
+    serverTime: () => fs.serverTimestamp(),
+  };
 }

@@ -212,7 +212,7 @@ function pick(p){
   const card=p.closest(".card"), code=p.dataset.pick;
   card.querySelectorAll(".cand").forEach(b=>b.classList.toggle("best",b===p));
   if(lastUPC&&UPC[lastUPC]!==code){ UPC[lastUPC]=code; ls.set("bcf-upc",UPC);
-    if(DB) DB.collection("upc").doc(lastUPC).set({code,at:now()}).catch(()=>{}); toast("Bottle barcode linked"); }
+    if(DB) logged(`Linked bottle barcode ${lastUPC} to ${byCode[code]?.[1]||code}`,[["upc/"+lastUPC,{code,at:now()}]]).catch(()=>{}); toast("Bottle barcode linked"); }
   const m=card.querySelector(".match"); m.innerHTML=itemBlock(byCode[code]); m.hidden=false; hydrate(m); m.scrollIntoView({block:"nearest",behavior:"smooth"});
   addRecent(code);
   if(lastWords.length){
@@ -252,9 +252,11 @@ document.addEventListener("click",async e=>{
   const st=t.closest("[data-step]"); if(st){ const box=st.closest("[data-cnt]"), inp=box.querySelector("input"); const v=Math.max(0,(parseFloat(inp.value)||0)+Number(st.dataset.step)); inp.value=fmtQty(v); saveCount(box.dataset.cnt,v,box); return; }
   const q=t.closest("[data-show]"); if(q){ showTab("find"); showItem(q.dataset.show); return; }
   const ns=t.closest("[data-addnosku]"); if(ns){ addNoSku(lastFile,lastText,lastUPC,ns); return; }
-  const nd=t.closest("[data-nsdone]"); if(nd){ DB?.collection("nosku").doc(nd.dataset.nsdone).update({done:nd.dataset.v==="1"}).catch(()=>toast("Couldn't update")); return; }
+  const nd=t.closest("[data-nsdone]"); if(nd){ if(!DB) return; const n=NOSKU.find(x=>x.id===nd.dataset.nsdone), on=nd.dataset.v==="1";
+    logged(`${on?"Marked SKU added":"Reopened"} on No SKU: ${n?.note||"bottle"}`,[["nosku/"+nd.dataset.nsdone,{done:on},"update"]]).catch(()=>toast("Couldn't update")); return; }
   const nx=t.closest("[data-nsdel]"); if(nx){ if(!confirm("Remove this bottle from the list?")) return;
-    try{ await DB.collection("nosku").doc(nx.dataset.nsdel).delete(); }catch{ toast("Couldn't remove"); } return; }
+    const n=NOSKU.find(x=>x.id===nx.dataset.nsdel);
+    try{ await logged(`Removed from No SKU: ${n?.note||"bottle"}`,[["nosku/"+nx.dataset.nsdel,null]]); }catch{ toast("Couldn't remove"); } return; }
   const nimg=t.closest("[data-nsimg]"); if(nimg){ openShot(nimg.src); return; }
   const a=t.closest("[data-addphoto]"); if(a){ photoFor=a.dataset.addphoto; $("itemPhoto").click(); return; }
   const sv=t.closest("[data-savesnap]"); if(sv&&lastFile){ savePhoto(sv.dataset.savesnap,lastFile,sv); return; }
@@ -340,7 +342,7 @@ async function addNoSku(file,text,upc,btn){
   if(btn){ btn.disabled=true; btn.textContent="Adding…"; }
   try{
     const img=file?await jpeg(file,700,.72):null;
-    await DB.collection("nosku").add({note:note.trim(),words:(text||"").slice(0,300),upc:upc||"",img,at:now(),done:false});
+    await logged(`Added to No SKU: ${note.trim()||"bottle"}`,[["nosku/"+DB.newId("nosku"),{note:note.trim(),words:(text||"").slice(0,300),upc:upc||"",img,at:now(),done:false}]]);
     if(btn) btn.textContent="Added to the No SKU list"; toast("Added to the No SKU list");
   }catch(e){ if(btn){ btn.disabled=false; btn.textContent="Didn't save, tap to retry"; } else toast("Didn't save. Check your connection."); }
 }
@@ -386,8 +388,7 @@ async function savePhoto(code,file,btn){
   try{
     const img=await jpeg(file,900,.75), thumb=await jpeg(file,96,.6);
     const sig=await fileSig(await dataUrlToBlob(img)).catch(()=>null);
-    await DB.collection("photoImg").doc(code).set({img,at:now()});
-    await DB.collection("photos").doc(code).set(sig?{thumb,sig,at:now()}:{thumb,at:now()});
+    await logged(`${PHOTOS[code]?"Replaced":"Added"} photo: ${byCode[code]?.[1]||code}`,[["photoImg/"+code,{img,at:now()}],["photos/"+code,sig?{thumb,sig,at:now()}:{thumb,at:now()}]]);
     IMG_CACHE.set(code,Promise.resolve(img));
   }catch(e){ if(btn){ btn.disabled=false; btn.textContent="Didn't save, tap to retry"; } }
 }
@@ -484,12 +485,12 @@ function previewList(list,note){
     <div class="btn-row"><button class="btn btn-primary" id="shApply" type="button">Use this list</button><button class="btn btn-quiet" id="shCancel" type="button">Cancel</button></div></div>`;
   $("shPreview").hidden=false;
   $("shApply").onclick=async()=>{ const b=$("shApply"); b.disabled=true; b.textContent="Saving…";
-    try{ await DB.collection("catalog").doc("current").set({items:list.map(r=>({c:r[0],n:r[1],p:r[2],k:r[3],g:r[4],a:r[5]||""})),source:SHEET.file,at:now()}); $("shPreview").hidden=true; toast("Item list updated"); }
+    try{ await logged(`Uploaded a new item list (${list.length} items, ${SHEET.file})`,[["catalog/current",{items:list.map(r=>({c:r[0],n:r[1],p:r[2],k:r[3],g:r[4],a:r[5]||""})),source:SHEET.file,at:now()}]]); $("shPreview").hidden=true; toast("Item list updated"); }
     catch{ b.disabled=false; b.textContent="Didn't save, tap to retry"; } };
   $("shCancel").onclick=()=>{ $("shPreview").hidden=true; };
 }
 $("shRevert").onclick=async()=>{ if(!confirm("Go back to the original item list for everyone?")) return;
-  try{ await DB.collection("catalog").doc("current").delete(); toast("Back to the original list"); }catch{ toast("Couldn't change the list"); } };
+  try{ await logged("Went back to the original item list",[["catalog/current",null]]); toast("Back to the original list"); }catch{ toast("Couldn't change the list"); } };
 
 /* ---------- Search ---------- */
 const listEl=$("list"), qEl=$("q"), countEl=$("count");
@@ -520,6 +521,7 @@ async function startShared(teamId){
     DB=await connect(FIREBASE,teamId);
   }catch(e){ console.error(e); note.hidden=false; note.textContent="Offline: shared photos and lists will appear when you're back online."; return; }
   $("missWrap").hidden=false; renderNoSku(); renderSheets(); refreshPhotos();
+  watchAccess(); ensureName();
   const err=()=>{ note.hidden=false; note.textContent="Couldn't reach the shared lists. Check your connection."; };
   DB.collection("photos").onSnapshot(snap=>{ const m={}; snap.docs.forEach(d=>{ const v=d.data(); if(typeof v?.thumb==="string"&&v.thumb.startsWith("data:image/")) m[d.id]={thumb:v.thumb,sig:v.sig,at:v.at}; });
     for(const c in m) if(PHOTOS[c]?.at!==m[c].at) IMG_CACHE.delete(c);
@@ -531,6 +533,200 @@ async function startShared(teamId){
     if(v&&Array.isArray(v.items)&&v.items.length>=10){ CATALOG={at:v.at,source:v.source}; setItems(v.items.filter(r=>r&&r.c&&r.n).map(r=>[String(r.c),String(r.n),String(r.p||""),String(r.k||"Liquor"),String(r.g||"?"),String(r.a||"")])); }
     else if(CATALOG){ CATALOG=null; setItems(BASE_ITEMS); } },err);
 }
+
+/* ---------- Change history: every shared change keeps what was there before, for 30 days ---------- */
+const UNDOABLE=/^(photos|photoImg|upc|nosku|catalog)\/[^/]+$/;
+// ops: [[path, data or null to delete, "update" to change only some fields]]
+async function logged(what,ops){
+  const before=await Promise.all(ops.map(([p])=>DB.doc(p).get().then(s=>s.exists?s.data():null).catch(()=>undefined)));
+  const b=DB.batch(), group=DB.newId("history");
+  ops.forEach(([p,d,mode],i)=>{
+    if(d===null) b.delete(p); else if(mode==="update") b.update(p,d); else b.set(p,d);
+    const id=i?DB.newId("history"):group, saved=before[i]!==undefined;
+    b.set("history/"+id,{at:DB.serverTime(),by:DB.uid,name:ME.name||"",path:p,what:String(what).slice(0,200),group,saved});
+    if(saved) b.set("histData/"+id,{before:before[i]});
+  });
+  await b.commit();
+}
+
+/* ---------- Who's using the app, and whether their access is on ---------- */
+let ME={name:ls.get("bcf-name","")};
+const ACCESS={revoked:false,approved:false,approvalOn:false,admin:false};
+let accessReady=false, wasBlocked=false;
+const deviceName=()=>{ const u=navigator.userAgent; return /iPhone/.test(u)?"iPhone":/iPad/.test(u)?"iPad":/Android/.test(u)?"Android phone":/Mac/.test(u)?"Mac":/Windows/.test(u)?"Windows computer":"Device"; };
+function saveMember(){ if(DB&&ME.name) DB.doc("members/"+DB.uid).set({name:ME.name,seen:DB.serverTime(),device:deviceName()}).catch(()=>{}); }
+function ensureName(){
+  if(ME.name){ saveMember(); return; }
+  $("nameDlg").hidden=false; setTimeout(()=>$("nameIn").focus(),50);
+}
+$("nameForm").onsubmit=e=>{ e.preventDefault(); const v=$("nameIn").value.replace(/\s+/g," ").trim().slice(0,40);
+  if(v.length<2){ $("nameMsg").textContent="Type your name."; return; }
+  ME.name=v; ls.set("bcf-name",v); $("nameDlg").hidden=true; saveMember(); applyAccess(); };
+function applyAccess(){
+  if(!accessReady) return;
+  const blocked=!ACCESS.admin&&(ACCESS.revoked||(ACCESS.approvalOn&&!ACCESS.approved));
+  if(blocked){
+    $("gateMsg").textContent=ACCESS.revoked?"Your access to this app has been turned off. Talk to your manager if you think that's a mistake."
+      :`Waiting for a manager to approve this phone${ME.name?` (${ME.name})`:""}. This opens on its own as soon as they do.`;
+    $("gate").hidden=false; $("app").hidden=true; wasBlocked=true;
+  } else if(wasBlocked){ location.reload(); }
+}
+function watchAccess(){
+  const keys={revoked:"revoked/"+DB.uid,approved:"approved/"+DB.uid,approvalOn:"config/approvalOn",admin:"admins/"+DB.uid};
+  const seen=new Set();
+  for(const [k,path] of Object.entries(keys)){
+    const done=v=>{ ACCESS[k]=v; seen.add(k); if(seen.size===4) accessReady=true; applyAccess(); };
+    DB.doc(path).onSnapshot(s=>done(s.exists),()=>done(false));
+  }
+}
+
+/* ---------- Manager mode: hold the word "Code" for 5 seconds ---------- */
+(()=>{ const k=$("adminKey"); let t=null,x0=0,y0=0;
+  const stop=()=>{ clearTimeout(t); t=null; };
+  k.addEventListener("pointerdown",e=>{ x0=e.clientX; y0=e.clientY; stop(); t=setTimeout(()=>{ t=null; try{navigator.vibrate?.(40);}catch{} openPin(); },5000); });
+  k.addEventListener("pointermove",e=>{ if(t&&Math.hypot(e.clientX-x0,e.clientY-y0)>14) stop(); });
+  ["pointerup","pointerleave","pointercancel"].forEach(ev=>k.addEventListener(ev,stop));
+  k.addEventListener("contextmenu",e=>e.preventDefault());
+})();
+let pinFails=0, pinWait=0;
+function openPin(){ $("pinMsg").textContent=""; $("pinIn").value=""; $("pinDlg").hidden=false; setTimeout(()=>$("pinIn").focus(),50); }
+$("pinClose").onclick=()=>{ $("pinDlg").hidden=true; };
+const withTimeout=(p,ms)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),ms))]);
+$("pinForm").onsubmit=async e=>{
+  e.preventDefault(); const msg=$("pinMsg"), go=$("pinGo"), pin=$("pinIn").value.trim();
+  if(!pin) return;
+  if(!DB){ msg.textContent="This needs the shared storage. Check your connection and reopen the app."; return; }
+  if(Date.now()<pinWait){ msg.textContent=`Too many tries. Wait ${Math.ceil((pinWait-Date.now())/1000)} seconds.`; return; }
+  go.disabled=true; msg.textContent="Checking…";
+  try{
+    // The password is checked by the database rules on Google's side; it isn't stored in this app.
+    await withTimeout(DB.doc("admins/"+DB.uid).set({pin,name:ME.name||"",at:DB.serverTime()}),12000);
+    pinFails=0; $("pinIn").value=""; $("pinDlg").hidden=true; openAdmin();
+  }catch(err){
+    if(err?.message==="timeout"){ msg.textContent="Couldn't reach the shared storage. Check your connection."; }
+    else{ pinFails++; $("pinIn").value=""; if(pinFails>=5){ pinFails=0; pinWait=Date.now()+60000; msg.textContent="Wrong password. Wait a minute before trying again."; } else msg.textContent="Wrong password."; }
+  }finally{ go.disabled=false; }
+};
+
+/* ---------- Manager page ---------- */
+const DAY=864e5;
+let ADM={members:{},revoked:new Set(),approved:new Set(),approvalOn:false,hist:[],unsub:[]};
+const tsDate=v=>v?.toDate?v.toDate():v?new Date(v):new Date();
+function ago(d){ const m=Math.round((Date.now()-d)/6e4); if(m<1) return "just now"; if(m<60) return `${m} min ago`; const h=Math.round(m/60); if(h<24) return `${h} hr ago`; const dd=Math.round(h/24); return dd===1?"yesterday":`${dd} days ago`; }
+const whoName=(uid,fallback)=>uid===DB?.uid?`${ADM.members[uid]?.name||fallback||ME.name||"You"} (this phone)`:(ADM.members[uid]?.name||fallback||"Unknown phone");
+function openAdmin(){
+  $("admin").hidden=false; $("admin").scrollTop=0; $("adminClose").focus();
+  ADM.unsub.forEach(f=>{ try{f();}catch{} }); ADM.unsub=[];
+  const L=(q,fn)=>ADM.unsub.push(q.onSnapshot(fn,()=>{}));
+  L(DB.collection("members"),s=>{ ADM.members=Object.fromEntries(s.docs.map(d=>[d.id,d.data()])); renderPeople(); renderUndo(); renderActivity(); });
+  L(DB.collection("revoked"),s=>{ ADM.revoked=new Set(s.docs.map(d=>d.id)); renderPeople(); });
+  L(DB.collection("approved"),s=>{ ADM.approved=new Set(s.docs.map(d=>d.id)); renderPeople(); });
+  L(DB.doc("config/approvalOn"),s=>{ ADM.approvalOn=s.exists; $("apOn").checked=s.exists; renderPeople(); });
+  loadHistory(); cleanHistory();
+}
+function closeAdmin(){ $("admin").hidden=true; ADM.unsub.forEach(f=>{ try{f();}catch{} }); ADM.unsub=[]; }
+$("adminClose").onclick=closeAdmin;
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ if(!$("admin").hidden) closeAdmin(); else if(!$("pinDlg").hidden) $("pinDlg").hidden=true; } });
+$("adminOut").onclick=async()=>{ try{ await DB.doc("admins/"+DB.uid).delete(); }catch{} closeAdmin(); toast("Signed out of manager mode"); };
+
+function renderPeople(){
+  const ids=Object.keys(ADM.members);
+  const state=id=>ADM.revoked.has(id)?"off":(ADM.approvalOn&&!ADM.approved.has(id)&&id!==DB.uid)?"wait":"on";
+  ids.sort((a,b)=>{ const o={wait:0,on:1,off:2}; return o[state(a)]-o[state(b)]||tsDate(ADM.members[b].seen)-tsDate(ADM.members[a].seen); });
+  $("ppl").innerHTML=ids.length?ids.map(id=>{ const m=ADM.members[id], st=state(id), me=id===DB.uid;
+    const chip=st==="off"?'<span class="chip st-off">Access off</span>':st==="wait"?'<span class="chip warn">Waiting for approval</span>':me?'<span class="chip">Manager</span>':"";
+    const acts=me?"":st==="off"?`<button class="copy" type="button" data-arestore="${esc(id)}">Turn back on</button>`
+      :`${st==="wait"?`<button class="copy" type="button" data-aapprove="${esc(id)}">Approve</button>`:""}<button class="copy" type="button" data-arevoke="${esc(id)}" style="color:var(--warn)">Turn off</button>`;
+    return `<div class="prow"><span class="who">${esc(whoName(id,m.name))} ${chip}</span><span class="acts">${acts}</span><span class="sub">${esc(m.device||"")} · last opened ${ago(tsDate(m.seen))}</span></div>`; }).join("")
+    :`<div class="empty">No one yet. People show up here after they open the app and add their name.</div>`;
+}
+$("ppl").addEventListener("click",async e=>{
+  const t=e.target, r=t.closest("[data-arevoke]"), on=t.closest("[data-arestore]"), ap=t.closest("[data-aapprove]");
+  try{
+    if(r){ const id=r.dataset.arevoke; if(!confirm(`Turn off access for ${ADM.members[id]?.name||"this phone"}? They're blocked right away.`)) return;
+      await DB.doc("revoked/"+id).set({at:DB.serverTime(),by:DB.uid,name:ADM.members[id]?.name||""}); await DB.doc("approved/"+id).delete().catch(()=>{}); toast("Access turned off"); }
+    if(on){ const id=on.dataset.arestore; await DB.doc("revoked/"+id).delete(); if(ADM.approvalOn) await DB.doc("approved/"+id).set({at:DB.serverTime(),by:DB.uid}); toast("Access turned back on"); }
+    if(ap){ await DB.doc("approved/"+ap.dataset.aapprove).set({at:DB.serverTime(),by:DB.uid}); toast("Approved"); }
+  }catch{ toast("Didn't save. Check your connection, or sign in again."); }
+});
+$("apOn").onchange=async e=>{
+  const want=e.target.checked;
+  try{
+    if(want){
+      if(!confirm("From now on, new phones wait for you to approve them. Everyone already listed (and not turned off) stays approved.")){ e.target.checked=false; return; }
+      const b=DB.batch(); let n=0;
+      for(const id of Object.keys(ADM.members)) if(!ADM.revoked.has(id)&&!ADM.approved.has(id)&&n<450){ b.set("approved/"+id,{at:DB.serverTime(),by:DB.uid}); n++; }
+      b.set("config/approvalOn",{at:DB.serverTime(),by:DB.uid}); await b.commit(); toast("New phones need your approval");
+    } else { await DB.doc("config/approvalOn").delete(); toast("New phones get in with the link"); }
+  }catch{ e.target.checked=!want; toast("Didn't save. Check your connection."); }
+};
+
+async function loadHistory(){
+  try{
+    const s=await DB.collection("history").where("at",">=",new Date(Date.now()-30*DAY)).orderBy("at","desc").get();
+    ADM.hist=s.docs.map(d=>({id:d.id,...d.data(),when:tsDate(d.data().at)}));
+  }catch{ ADM.hist=null; }
+  renderUndo(); renderActivity();
+}
+// History older than 31 days is no longer needed.
+async function cleanHistory(){
+  try{ const s=await DB.collection("history").where("at","<",new Date(Date.now()-31*DAY)).limit(200).get(); if(s.empty) return;
+    const b=DB.batch(); s.docs.forEach(d=>{ b.delete("history/"+d.id); if(d.data().saved) b.delete("histData/"+d.id); }); await b.commit(); }catch{}
+}
+const groupsOf=list=>{ const g=new Map(); list.forEach(h=>{ const k=h.group||h.id; if(!g.has(k)) g.set(k,h); }); return [...g.values()]; };
+function renderActivity(){
+  const el=$("act");
+  if(ADM.hist===null){ el.innerHTML='<div class="empty">Couldn\'t load the history. Check your connection.</div>'; return; }
+  const g=groupsOf(ADM.hist).slice(0,40);
+  el.innerHTML=g.length?g.map(h=>`<div class="arow"><span>${esc(h.what)}</span><span class="sub">${esc(whoName(h.by,h.name))} · ${ago(h.when)}</span></div>`).join("")
+    :'<div class="empty">No changes in the last 30 days.</div>';
+}
+function undoSet(){ const days=Number($("undoDays").value)||1, who=$("undoWho").value, since=Date.now()-days*DAY;
+  return (ADM.hist||[]).filter(h=>h.when>=since&&(!who||h.by===who)); }
+function renderUndo(){
+  const hist=ADM.hist||[], daysSel=$("undoDays"), whoSel=$("undoWho");
+  const prevDays=daysSel.value||"1", prevWho=whoSel.value;
+  daysSel.innerHTML=Array.from({length:30},(_,i)=>{ const d=i+1, n=groupsOf(hist.filter(h=>h.when>=Date.now()-d*DAY)).length;
+    return `<option value="${d}">${d===1?"24 hours":`${d} days (${d*24} hours)`} · ${n} change${n===1?"":"s"}</option>`; }).join("");
+  daysSel.value=prevDays;
+  const people=new Map(); hist.forEach(h=>{ if(!people.has(h.by)) people.set(h.by,whoName(h.by,h.name)); });
+  whoSel.innerHTML=`<option value="">Everyone</option>`+[...people].map(([id,n])=>`<option value="${esc(id)}">${esc(n)}</option>`).join("");
+  whoSel.value=people.has(prevWho)?prevWho:"";
+  const g=groupsOf(undoSet()), prev=$("undoPrev");
+  if(ADM.hist===null){ prev.innerHTML='<p class="hint">Couldn\'t load the history.</p>'; $("undoGo").disabled=true; return; }
+  prev.innerHTML=g.length?`<p class="hint"><b style="color:var(--ink)">${g.length} change${g.length===1?"":"s"}</b> will be undone, newest first:</p><ul class="undo-list">${g.map(h=>`<li>${esc(h.what)} <span style="opacity:.8">· ${esc(whoName(h.by,h.name))}, ${ago(h.when)}</span></li>`).join("")}</ul>${whoSel.value?'<p class="hint" style="margin-top:6px">If someone else changed the same thing afterward, their change is undone too.</p>':""}`
+    :'<p class="hint">Nothing changed in that time.</p>';
+  $("undoGo").disabled=!g.length;
+}
+$("undoDays").onchange=renderUndo; $("undoWho").onchange=renderUndo;
+$("undoGo").onclick=async()=>{
+  const days=Number($("undoDays").value)||1, who=$("undoWho").value, go=$("undoGo");
+  const label=days===1?"the last 24 hours":`the last ${days} days`;
+  if(!confirm(`Undo ${who?`${$("undoWho").selectedOptions[0].text}'s changes`:"all changes"} from ${label}? This changes it for everyone. You can undo the undo afterward.`)) return;
+  go.disabled=true; go.textContent="Undoing…";
+  try{
+    // Fresh copy of the history, oldest first: the first entry for each thing holds how it looked before the window.
+    const s=await DB.collection("history").where("at",">=",new Date(Date.now()-days*DAY)).orderBy("at","asc").get();
+    const first=new Map(); let skipped=0;
+    s.docs.map(d=>({id:d.id,...d.data()})).filter(h=>!who||h.by===who).forEach(h=>{ if(!first.has(h.path)) first.set(h.path,h); });
+    let b=DB.batch(), ops=0; const done=new Set();
+    for(const [path,h] of first){
+      if(!UNDOABLE.test(path)||!h.saved){ skipped++; continue; }
+      const bd=await DB.doc("histData/"+h.id).get(); if(!bd.exists){ skipped++; continue; }
+      const before=bd.data().before??null;
+      const cur=await DB.doc(path).get(), now0=cur.exists?cur.data():null;
+      if(before===null) b.delete(path); else b.set(path,before);
+      const id=DB.newId("history");
+      b.set("history/"+id,{at:DB.serverTime(),by:DB.uid,name:ME.name||"",path,what:`Undid: ${h.what}`.slice(0,200),group:id,saved:true,undo:true});
+      b.set("histData/"+id,{before:now0});
+      ops+=3; done.add(h.group||h.id);
+      if(ops>=360){ await b.commit(); b=DB.batch(); ops=0; }
+    }
+    if(ops) await b.commit();
+    toast(done.size?`Undid ${done.size} change${done.size===1?"":"s"}${skipped?` (${skipped} couldn't be undone)`:""}`:"Nothing to undo");
+  }catch(e){ console.error(e); toast("Undo didn't finish. Check your connection and try again."); }
+  finally{ go.textContent="Undo these changes"; loadHistory(); }
+};
 
 /* ---------- Start ---------- */
 async function start(code,fromLink){

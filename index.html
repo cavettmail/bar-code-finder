@@ -154,7 +154,7 @@ html{-webkit-text-size-adjust:100%}
 .empty{padding:16px 14px;color:var(--muted)}
 .diff{display:grid;gap:4px;font-size:.92rem}
 .diff ul{margin:4px 0 0;padding-left:18px;max-height:12em;overflow:auto;color:var(--muted)}
-.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:99px;font:600 .9rem var(--body);z-index:20;max-width:calc(100vw - 32px)}
+.toast{position:fixed;z-index:40!important;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:99px;font:600 .9rem var(--body);z-index:20;max-width:calc(100vw - 32px)}
 
 .lock{max-width:480px;margin:0 auto;padding:48px 16px;display:grid;gap:16px}
 .lock h1{font:800 2.3rem/1 var(--display);text-transform:uppercase;margin:0}
@@ -169,6 +169,26 @@ html{-webkit-text-size-adjust:100%}
 .help h3{margin:0 0 6px;font:600 1.05rem var(--body);color:var(--accent)}
 .help ol,.help ul{margin:0;padding-left:20px;display:grid;gap:6px}
 .help p{margin:0 0 6px}
+/* Manager mode + access */
+.akey{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:none}
+header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.help .in.narrow{max-width:420px;padding-top:56px}
+.dlg-top{z-index:30}
+.gate{position:fixed;inset:0;background:var(--bg);z-index:25;overflow:auto}
+.field select{width:100%;font:1rem var(--body);padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.help section{display:grid;gap:10px}
+.help section>h3{margin:0}
+.prow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:11px 14px;border-bottom:1px solid var(--line);align-items:center}
+.prow:last-child{border-bottom:0}
+.prow .who{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.prow .sub{color:var(--muted);font-size:.84rem;grid-column:1}
+.prow .acts{grid-row:1/3;grid-column:2;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.st-off{background:var(--warn-soft);color:var(--warn)}
+.arow{padding:9px 14px;border-bottom:1px solid var(--line);font-size:.9rem;display:grid;gap:1px}
+.arow:last-child{border-bottom:0}
+.arow .sub{color:var(--muted);font-size:.8rem}
+.undo-list{margin:6px 0 0;padding-left:18px;max-height:14em;overflow:auto;color:var(--muted);font-size:.88rem}
+.btn-danger.solid{background:var(--warn);color:var(--surface);border-color:var(--warn)}
 </style>
 <script src="vendor/tesseract.min.js" defer></script>
 </head>
@@ -180,7 +200,7 @@ html{-webkit-text-size-adjust:100%}
 </div>
 <div class="wrap" id="app" hidden>
   <header>
-    <div class="top"><h1 style="flex:1">Bar Code Finder</h1>
+    <div class="top"><h1 style="flex:1">Bar <span class="akey" id="adminKey">Code</span> Finder</h1>
       <div class="hbtns"><button class="install" id="installBtn" type="button" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 7v7m-3-3 3 3 3-3"/></svg>Add to phone</button><button class="install" id="shareBtn" type="button">Share app</button><button class="install" id="helpBtn" type="button">How to use</button></div></div>
     <p>Snap a bottle that won't scan. Get the barcode from the inventory sheets.</p>
     <p class="count" id="photoCount" hidden></p>
@@ -287,6 +307,33 @@ html{-webkit-text-size-adjust:100%}
     <li>Confirm which column is the item code, name, and so on.</li>
     <li>Check what's added and removed, then tap <b>Use this list</b>. It updates for everyone.</li></ol></section>
   <section><h3>Share with the team</h3><p>Tap <b>Share app</b> and send the link. It has the team code built in, so don't post it publicly.</p></section>
+</div></div>
+<div class="gate" id="gate" hidden><div class="lock" style="padding-top:64px"><h1>Bar Code Finder</h1><p id="gateMsg"></p></div></div>
+<div class="help dlg-top" id="nameDlg" hidden role="dialog" aria-modal="true" aria-labelledby="nameTitle"><div class="in narrow">
+  <h2 id="nameTitle">What's your name?</h2>
+  <p class="hint" style="font-size:.95rem">So your manager knows whose phone this is. You only do this once.</p>
+  <form id="nameForm" class="field"><label class="label" for="nameIn">Your name</label><input id="nameIn" maxlength="40" autocomplete="name" required><button class="btn btn-primary" type="submit">Continue</button><p class="hint" id="nameMsg"></p></form>
+</div></div>
+<div class="help dlg-top" id="pinDlg" hidden role="dialog" aria-modal="true" aria-labelledby="pinTitle"><div class="in narrow">
+  <div class="hd"><h2 id="pinTitle">Sign in</h2><button class="install" id="pinClose" type="button">Cancel</button></div>
+  <form id="pinForm" class="field"><label class="label" for="pinIn">Password</label><input id="pinIn" type="password" inputmode="numeric" autocomplete="off"><button class="btn btn-primary" type="submit" id="pinGo">Sign in</button><p class="hint" id="pinMsg" aria-live="polite"></p></form>
+</div></div>
+<div class="help" id="admin" hidden role="dialog" aria-modal="true" aria-labelledby="adminTitle"><div class="in">
+  <div class="hd"><h2 id="adminTitle">Manager</h2><button class="install" id="adminClose" type="button">Close</button></div>
+  <section><h3>People</h3>
+    <p class="hint">Everyone who has opened the app. Turning someone off blocks them from the shared photos, barcodes, No SKU list and item updates right away.</p>
+    <label class="toggle"><input type="checkbox" id="apOn"> New phones need my approval</label>
+    <div class="list" id="ppl"><div class="empty">Loading…</div></div>
+  </section>
+  <section><h3>Undo changes</h3>
+    <p class="hint">Puts photos, linked barcodes, the No SKU list and the item list back the way they were. Counts stay on each phone and aren't affected.</p>
+    <label class="field"><span class="label">Undo everything changed in the last</span><select id="undoDays"></select></label>
+    <label class="field"><span class="label">Changes made by</span><select id="undoWho"><option value="">Everyone</option></select></label>
+    <div id="undoPrev"></div>
+    <button class="btn btn-danger solid" id="undoGo" type="button" disabled>Undo these changes</button>
+  </section>
+  <section><h3>Recent changes</h3><div class="list" id="act"><div class="empty">Loading…</div></div></section>
+  <button class="btn btn-quiet" id="adminOut" type="button">Sign out of manager mode on this phone</button>
 </div></div>
 <div class="toast" id="toast" hidden role="status"></div>
 <div class="overlay" id="overlay" hidden role="dialog" aria-label="Barcode, full screen"></div>

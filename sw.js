@@ -1,5 +1,5 @@
 // Keeps the app working with a weak signal: the app files load from the phone, then update in the background.
-const VERSION = "bcf-v1";
+const VERSION = "bcf-v2";
 const SHELL = ["./", "index.html", "app.js", "store.js", "config.js", "manifest.webmanifest", "data/items.enc.json", "icon-192.png"];
 const BIG = ["vendor/tesseract.min.js", "vendor/zxing.min.js", "vendor/ocr/worker.min.js"];
 
