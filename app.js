@@ -276,6 +276,11 @@ async function openFull(code){ const r=byCode[code]; if(!r) return; lastFocus=do
 function openShot(src){ lastFocus=document.activeElement; ov.innerHTML=`<img class="shot" style="max-height:80vh;max-width:92vw" src="${src}" alt=""><div class="tip">Tap anywhere to close.</div>`; ov.hidden=false; }
 ov.onclick=()=>{ ov.hidden=true; lastFocus?.focus?.(); };
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!ov.hidden){ ov.hidden=true; } });
+/* ---------- How to use ---------- */
+function openHelp(){ $("help").hidden=false; $("help").scrollTop=0; $("helpClose").focus(); ls.set("bcf-help-seen",true); }
+function closeHelp(){ $("help").hidden=true; $("helpBtn").focus(); }
+$("helpBtn").onclick=openHelp; $("helpClose").onclick=closeHelp;
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("help").hidden) closeHelp(); });
 
 /* ---------- Pinned + recent (this phone) ---------- */
 let FAV=ls.get("bcf-fav",[]), RECENT=ls.get("bcf-recent",[]);
@@ -396,7 +401,7 @@ function renderSheets(){
   const src=CATALOG?`Uploaded ${new Date(CATALOG.at).toLocaleDateString()} from ${esc(CATALOG.source||"new sheets")}`:"The original inventory sheets";
   $("shInfo").innerHTML=`<b>${ITEMS.length} items</b> · ${src}`;
   $("shRevert").hidden=!CATALOG; $("shPick").hidden=!DB;
-  if(!DB){ shStatus("Updating the list turns on once the app's shared storage is set up."); }
+  if(!DB){ shStatus("Updating the list turns on once the app's shared storage is set up."); } else if($("shStatus").textContent.startsWith("Updating the list turns on")) shStatus("");
 }
 function shStatus(h,spin){ const el=$("shStatus"); el.hidden=!h; el.innerHTML=(spin?'<span class="spin"></span>':"")+(h||""); }
 const guessCat=t=>{ t=norm(t); if(/\b(beer|ipa|lager|pils|cider|birra|kolsch|ale)\b/.test(t)) return "Beer/Cider";
@@ -534,7 +539,7 @@ async function start(code,fromLink){
   TEAM_CODE=code; ls.set("bcf-team",code);
   if(fromLink) history.replaceState(null,"",location.pathname);
   BASE_ITEMS=items; $("lock").hidden=true; $("app").hidden=false;
-  setItems(BASE_ITEMS); renderNoSku(); showTab(ls.get("bcf-tab","find"));
+  setItems(BASE_ITEMS); renderNoSku(); showTab(ls.get("bcf-tab","find")); if(!ls.get("bcf-help-seen",false)) openHelp();
   startShared(await teamIdFor(code));
   return true;
 }

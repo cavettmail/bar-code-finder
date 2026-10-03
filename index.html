@@ -161,6 +161,14 @@ html{-webkit-text-size-adjust:100%}
 .lock p{color:var(--muted);margin:0}
 .hbtns{display:flex;flex-direction:column;gap:6px;align-items:stretch;flex:none}
 .hbtns .install{justify-content:center}
+.help{position:fixed;inset:0;background:var(--bg);z-index:15;overflow:auto;-webkit-overflow-scrolling:touch}
+.help .in{max-width:640px;margin:0 auto;padding:18px 16px 48px;display:grid;gap:14px}
+.help .hd{display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;background:var(--bg);padding:6px 0}
+.help h2{font:800 1.9rem/1 var(--display);text-transform:uppercase;margin:0}
+.help section{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.help h3{margin:0 0 6px;font:600 1.05rem var(--body);color:var(--accent)}
+.help ol,.help ul{margin:0;padding-left:20px;display:grid;gap:6px}
+.help p{margin:0 0 6px}
 </style>
 <script src="vendor/tesseract.min.js" defer></script>
 </head>
@@ -173,7 +181,7 @@ html{-webkit-text-size-adjust:100%}
 <div class="wrap" id="app" hidden>
   <header>
     <div class="top"><h1 style="flex:1">Bar Code Finder</h1>
-      <div class="hbtns"><button class="install" id="installBtn" type="button" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 7v7m-3-3 3 3 3-3"/></svg>Add to phone</button><button class="install" id="shareBtn" type="button">Share app</button></div></div>
+      <div class="hbtns"><button class="install" id="installBtn" type="button" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 7v7m-3-3 3 3 3-3"/></svg>Add to phone</button><button class="install" id="shareBtn" type="button">Share app</button><button class="install" id="helpBtn" type="button">How to use</button></div></div>
     <p>Snap a bottle that won't scan. Get the barcode from the inventory sheets.</p>
     <p class="count" id="photoCount" hidden></p>
     <p class="count" id="syncNote" hidden></p>
@@ -249,6 +257,37 @@ html{-webkit-text-size-adjust:100%}
     </section>
   </div>
 </div>
+<div class="help" id="help" hidden role="dialog" aria-modal="true" aria-labelledby="helpTitle"><div class="in">
+  <div class="hd"><h2 id="helpTitle">How to use</h2><button class="install" id="helpClose" type="button">Done</button></div>
+  <section><h3>First time</h3><ol>
+    <li>Open the link in Chrome (Safari on iPhone).</li>
+    <li>Tap <b>Add to phone</b> so it opens like a regular app.</li>
+    <li>Allow the camera when asked.</li></ol></section>
+  <section><h3>Find a bottle that won't scan</h3><ol>
+    <li>On <b>Find</b>, tap <b>Snap a bottle</b>.</li>
+    <li>Fill the frame with the front label, held straight. Include the bottle's barcode if you can.</li>
+    <li>Tap the match that's right. The app remembers it, so it gets faster for everyone.</li>
+    <li>Scan the big barcode on the card with your scanner. Tap it to go full screen and turn your brightness up.</li></ol>
+    <p class="hint" style="margin-top:8px">No luck? Type the producer or name in the search box instead.</p></section>
+  <section><h3>Add bottle photos</h3><ul>
+    <li>Open any item and tap <b>Add photo</b>, or <b>Use the photo I just took</b> after a snap.</li>
+    <li>Photos are shared with the team and help the app recognize bottles.</li>
+    <li>Tick <b>Only items without a photo</b> to see what's left.</li></ul></section>
+  <section><h3>Count</h3><ol>
+    <li>Find an item and type its count on the card, or use +1 / −1.</li>
+    <li>Open bottles use decimals: 3.4 means 3 full plus about 4 tenths.</li>
+    <li>The <b>Count</b> tab shows totals by sheet page. Copy it or download a spreadsheet when you're done.</li>
+    <li><b>Start a new count</b> clears it. Counts stay on your phone only.</li></ol></section>
+  <section><h3>Bottle not on the sheets?</h3><ol>
+    <li>Tap <b>Not on the sheets? Add it to the No SKU list</b> after a snap, or use <b>Add a bottle</b> on the No SKU tab.</li>
+    <li>Add a short note (name, size).</li>
+    <li>The whole team sees the list. Tap <b>SKU added</b> once it's set up, or <b>Copy list</b> to send it on.</li></ol></section>
+  <section><h3>New inventory sheets</h3><ol>
+    <li>On <b>Sheets</b>, tap <b>Upload new sheets</b>. Excel or CSV works best.</li>
+    <li>Confirm which column is the item code, name, and so on.</li>
+    <li>Check what's added and removed, then tap <b>Use this list</b>. It updates for everyone.</li></ol></section>
+  <section><h3>Share with the team</h3><p>Tap <b>Share app</b> and send the link. It has the team code built in, so don't post it publicly.</p></section>
+</div></div>
 <div class="toast" id="toast" hidden role="status"></div>
 <div class="overlay" id="overlay" hidden role="dialog" aria-label="Barcode, full screen"></div>
 <script type="module" src="app.js"></script>
