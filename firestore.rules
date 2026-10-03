@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only people with the team link can reach a team's data: the team id is derived from the
+    // secret code in that link, and the list of teams itself can't be read.
+    match /teams/{team}/{collection}/{doc} {
+      allow read, write: if request.auth != null && team.size() >= 24;
+    }
+  }
+}

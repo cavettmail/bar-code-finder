@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f5c48">
+<meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Bar Code Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one-column phone tool. Snap panel on top, results, then search across the full sheet list. */
+:root{
+  --bg:#f3f2ee; --surface:#ffffff; --ink:#1d2321; --muted:#5f6864; --line:#dcdcd5;
+  --accent:#1f5c48; --accent-ink:#ffffff; --accent-soft:#e1ece6;
+  --warn:#8a4b00; --warn-soft:#f6ead8; --ok:#1f6b3a;
+  --display:"Big Shoulders Display","Arial Narrow",Arial,sans-serif;
+  --body:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121614; --surface:#1b201e; --ink:#e7ebe8; --muted:#9aa5a0; --line:#2c3431;
+  --accent:#6cc4a1; --accent-ink:#0d1a15; --accent-soft:#1f2f29;
+  --warn:#f0b56a; --warn-soft:#2e2418; --ok:#7fd49b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121614; --surface:#1b201e; --ink:#e7ebe8; --muted:#9aa5a0; --line:#2c3431;
+  --accent:#6cc4a1; --accent-ink:#0d1a15; --accent-soft:#1f2f29;
+  --warn:#f0b56a; --warn-soft:#2e2418; --ok:#7fd49b; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);margin:0}
+.wrap{max-width:640px;margin:0 auto;padding-inline:16px;padding-block:18px 48px;display:grid;gap:18px}
+header h1{font:800 2.3rem/1 var(--display);letter-spacing:.01em;margin:0;text-transform:uppercase}
+header p{margin:6px 0 0;color:var(--muted)}
+.snap{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:12px}
+.btn{appearance:none;border:0;border-radius:10px;font:600 1rem var(--body);padding:14px 16px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;width:100%}
+.btn-primary{background:var(--accent);color:var(--accent-ink);font-size:1.1rem;padding:18px}
+.btn-quiet{background:transparent;color:var(--accent);border:1px solid var(--line)}
+.btn:focus-visible,input:focus-visible,.row:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn.is-busy{opacity:.55;cursor:wait}
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}
+.hint{font-size:.85rem;color:var(--muted);margin:0}
+.status{font-size:.95rem;color:var(--muted);display:flex;gap:10px;align-items:center}
+.spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);animation:sp 0.8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.preview{display:flex;gap:12px;align-items:center}
+.preview img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.label{font:600 .72rem var(--body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.results{display:grid;gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:10px;min-width:0}
+.card .read{color:var(--muted);font-size:.9rem}
+.card h3{margin:0;font:600 1.08rem/1.25 var(--body)}
+.card .prod{color:var(--muted)}
+.meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{font-size:.78rem;font-weight:600;padding:3px 9px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.code{font:500 1rem var(--mono);font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.plate{background:#ffffff;border-radius:8px;padding:10px 12px 6px;display:block;width:100%;border:0;cursor:zoom-in}
+.plate svg{display:block;width:100%;height:auto}
+.plate .num{font:500 .9rem var(--mono);color:#111;text-align:center;margin-top:2px;letter-spacing:.08em}
+.alts{display:grid;gap:6px}
+.alt{display:flex;justify-content:space-between;gap:10px;font-size:.9rem;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer;text-align:left;font-family:var(--body);width:100%}
+.alt span:first-child{min-width:0}
+.nosku{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:.92rem}
+.search{display:grid;gap:10px}
+.search input{width:100%;font:1rem var(--body);padding:13px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.row{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;background:transparent;width:100%;text-align:left;border-left:0;border-right:0;border-top:0;color:var(--ink);font-family:var(--body)}
+.row:last-child{border-bottom:0}
+.row .n{font-weight:500;min-width:0}
+.row .p{color:var(--muted);font-size:.86rem;grid-column:1}
+.row .c{grid-row:1/3;grid-column:2;align-self:center;text-align:right}
+.row .pg{display:block;font-size:.78rem;color:var(--muted)}
+.expand{padding:4px 14px 14px;border-bottom:1px solid var(--line)}
+.count{font-size:.85rem;color:var(--muted)}
+.copy{appearance:none;border:1px solid var(--line);background:transparent;color:var(--accent);border-radius:8px;padding:6px 10px;font:600 .82rem var(--body);cursor:pointer}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+.cands{display:grid;gap:8px}
+.cand{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);text-align:left;font-family:var(--body);cursor:pointer;width:100%}
+.cand .sub{color:var(--muted);font-size:.85rem}
+.cand.best{border-color:var(--accent);background:var(--accent-soft)}
+.ocr{font:500 .8rem var(--mono);color:var(--muted);white-space:pre-wrap;max-height:5.5em;overflow:auto;background:var(--bg);border-radius:8px;padding:8px}
+.overlay{position:fixed;inset:0;background:#ffffff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px 16px;z-index:10;cursor:zoom-out}
+.overlay svg{width:min(92vw,720px);height:auto}
+.overlay .big{font:500 1.6rem var(--mono);color:#111;letter-spacing:.1em}
+.overlay .nm{font:600 1.05rem var(--body);color:#333;text-align:center}
+.overlay .tip{font-size:.85rem;color:#666}
+.overlay .shot{max-width:min(70vw,320px);max-height:34vh;border-radius:10px;object-fit:contain}
+/* Bottle photos */
+.pic{display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:center}
+.pic img,.pic .ph{width:96px;height:128px;border-radius:10px;object-fit:cover;border:1px solid var(--line);background:var(--bg);display:block}
+.pic .ph{display:grid;place-items:center;color:var(--muted)}
+.pic .acts{display:grid;gap:8px;justify-items:start}
+.row{grid-template-columns:40px 1fr auto}
+.row .th{grid-row:1/3;grid-column:1;width:40px;height:52px;border-radius:6px;object-fit:cover;border:1px solid var(--line);background:var(--bg);display:grid;place-items:center;color:var(--muted);align-self:center}
+.row .n{grid-column:2}.row .p{grid-column:2}.row .c{grid-column:3}
+.row.note{grid-template-columns:1fr}.row.note .p{grid-column:1}
+.tools{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.toggle{display:flex;align-items:center;gap:8px;font-size:.88rem;color:var(--ink);cursor:pointer}
+.toggle input{width:18px;height:18px;accent-color:var(--accent)}
+.photo-ok{color:var(--ok);font-size:.88rem;font-weight:600}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.install{appearance:none;flex:none;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:99px;padding:8px 14px;font:600 .88rem var(--body);cursor:pointer;display:flex;align-items:center;gap:6px}
+.blocked{display:grid;gap:10px}
+/* Tabs */
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;position:sticky;top:0;z-index:5}
+.tab{appearance:none;border:0;background:transparent;color:var(--muted);font:600 .9rem var(--body);padding:10px 4px;border-radius:9px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0}
+.tab .n{font:500 .72rem var(--mono);color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+.tab[aria-selected="true"] .n{color:var(--accent-ink)}
+.panel{display:grid;gap:18px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.btn-row .btn{width:auto;flex:1 1 auto;padding:12px 14px}
+.btn-danger{background:transparent;color:var(--warn);border:1px solid var(--line)}
+/* Item extras */
+.ihead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.star{appearance:none;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:99px;width:40px;height:40px;flex:none;cursor:pointer;display:grid;place-items:center;font-size:1.2rem;line-height:1}
+.star[aria-pressed="true"]{color:#c58a00;border-color:#c58a00}
+.cnt{display:grid;grid-template-columns:auto 52px 1fr 52px;gap:8px;align-items:center;background:var(--bg);border-radius:10px;padding:8px}
+.cnt label{font:600 .72rem var(--body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding-left:4px}
+.cnt input{width:100%;font:600 1.2rem var(--mono);text-align:center;padding:10px 6px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.cnt button{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--accent);border-radius:8px;height:46px;font:700 1.05rem var(--body);cursor:pointer}
+.cnt .st{grid-column:1/-1;font-size:.8rem;color:var(--muted);padding-left:4px;min-height:1em}
+.tag{font-size:.75rem;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);justify-self:start}
+.upcnote{font-size:.85rem;color:var(--ok)}
+/* Quick picks */
+.quick{display:grid;gap:8px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.qchip{appearance:none;flex:none;max-width:220px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:8px 12px;text-align:left;cursor:pointer;font:500 .88rem var(--body);display:grid;gap:1px}
+.qchip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qchip .sub{color:var(--muted);font-size:.78rem}
+/* Count + no-SKU lists */
+.sum{display:flex;gap:16px;flex-wrap:wrap;align-items:baseline}
+.sum b{font:800 2rem/1 var(--display)}
+.pghead{font:600 .72rem var(--body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding:12px 14px 6px;background:var(--bg);border-bottom:1px solid var(--line)}
+.crow{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:center}
+.crow:last-child{border-bottom:0}
+.crow .q{grid-row:1/3;grid-column:2;font:600 1.15rem var(--mono);text-align:right}
+.crow .s{color:var(--muted);font-size:.84rem}
+.crow button.nm{appearance:none;border:0;background:transparent;color:var(--ink);font:500 1rem var(--body);text-align:left;padding:0;cursor:pointer}
+.nrow{display:grid;grid-template-columns:72px 1fr;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.nrow:last-child{border-bottom:0}
+.nrow img,.nrow .ph{width:72px;height:96px;border-radius:8px;object-fit:cover;border:1px solid var(--line);background:var(--bg);display:grid;place-items:center;color:var(--muted)}
+.nrow .t{display:grid;gap:4px;min-width:0}
+.nrow .w{font:500 .78rem var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.nrow.done{opacity:.55}
+.field{display:grid;gap:6px}
+.field input,.field textarea{width:100%;font:1rem var(--body);padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.empty{padding:16px 14px;color:var(--muted)}
+.diff{display:grid;gap:4px;font-size:.92rem}
+.diff ul{margin:4px 0 0;padding-left:18px;max-height:12em;overflow:auto;color:var(--muted)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:99px;font:600 .9rem var(--body);z-index:20;max-width:calc(100vw - 32px)}
+
+.lock{max-width:480px;margin:0 auto;padding:48px 16px;display:grid;gap:16px}
+.lock h1{font:800 2.3rem/1 var(--display);text-transform:uppercase;margin:0}
+.lock p{color:var(--muted);margin:0}
+.hbtns{display:flex;flex-direction:column;gap:6px;align-items:stretch;flex:none}
+.hbtns .install{justify-content:center}
+</style>
+<script src="vendor/tesseract.min.js" defer></script>
+</head>
+<body>
+<div class="lock" id="lock" hidden>
+  <h1>Bar Code Finder</h1>
+  <p id="lockMsg">Open this app from the link your team sent you. The link has the code that unlocks your bar's item list.</p>
+  <form id="lockForm" class="field"><label for="lockCode" class="label">Or type the team code</label><input id="lockCode" autocomplete="off" autocapitalize="none" spellcheck="false"><button class="btn btn-primary" type="submit">Unlock</button></form>
+</div>
+<div class="wrap" id="app" hidden>
+  <header>
+    <div class="top"><h1 style="flex:1">Bar Code Finder</h1>
+      <div class="hbtns"><button class="install" id="installBtn" type="button" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 7v7m-3-3 3 3 3-3"/></svg>Add to phone</button><button class="install" id="shareBtn" type="button">Share app</button></div></div>
+    <p>Snap a bottle that won't scan. Get the barcode from the inventory sheets.</p>
+    <p class="count" id="photoCount" hidden></p>
+    <p class="count" id="syncNote" hidden></p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" type="button" data-tab="find" aria-selected="true">Find</button>
+    <button class="tab" role="tab" type="button" data-tab="count" aria-selected="false">Count<span class="n" id="tabCount">0</span></button>
+    <button class="tab" role="tab" type="button" data-tab="nosku" aria-selected="false">No SKU<span class="n" id="tabNosku">0</span></button>
+    <button class="tab" role="tab" type="button" data-tab="sheets" aria-selected="false">Sheets</button>
+  </nav>
+
+  <div class="panel" data-panel="find">
+  <section class="snap" aria-label="Identify a bottle from a photo">
+    <label class="btn btn-primary" id="snapBtn" for="photo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      Snap a bottle
+    </label>
+    <input id="photo" class="vh" type="file" accept="image/*" capture="environment">
+    <label class="btn btn-quiet" id="libBtn" for="photoLib">Choose a photo</label>
+    <input id="photoLib" class="vh" type="file" accept="image/*">
+    <p class="hint">Fill the frame with the front label, held straight. If the bottle's own barcode is in the shot, the app reads that too. Tap the right match and it remembers for next time.</p>
+    <div id="status" class="status" hidden></div>
+    <div id="blocked" class="nosku blocked" hidden><span id="blockedMsg">The camera is blocked in this view. Open the app in Chrome instead.</span><button class="btn btn-primary" id="openBrowser" type="button">Open in Chrome</button></div>
+  </section>
+
+  <section class="results" id="results" aria-live="polite"></section>
+
+  <section class="quick" id="quick" hidden aria-label="Pinned and recent items"></section>
+
+  <section class="search" aria-label="Search the sheets">
+    <div class="label">Search all <span id="total"></span> items on the sheets</div>
+    <input id="q" type="search" placeholder="Producer, wine, spirit, or code" autocomplete="off">
+    <div class="tools"><div class="count" id="count"></div><label class="toggle" id="missWrap" hidden><input type="checkbox" id="missOnly"> Only items without a photo</label></div>
+    <input id="itemPhoto" class="vh" type="file" accept="image/*" capture="environment">
+    <div class="list" id="list"></div>
+  </section>
+  </div>
+
+  <div class="panel" data-panel="count" hidden>
+    <section class="snap" aria-label="Count summary">
+      <div class="sum"><div><b id="cItems">0</b> <span class="count">items counted</span></div><div><b id="cBottles">0</b> <span class="count">bottles</span></div></div>
+      <p class="hint" id="cHint">Find a bottle (snap, search, or a pinned item) and enter its count on the item card. Use decimals for open bottles: 3.4 means 3 full plus about 4 tenths.</p>
+      <div class="btn-row">
+        <button class="btn btn-quiet" id="cCopy" type="button">Copy count</button>
+        <button class="btn btn-quiet" id="cCsv" type="button">Download spreadsheet</button>
+        <button class="btn btn-danger" id="cClear" type="button">Start a new count</button>
+      </div>
+    </section>
+    <div class="list" id="cList"></div>
+  </div>
+
+  <div class="panel" data-panel="nosku" hidden>
+    <section class="snap" aria-label="Add a bottle that needs a SKU">
+      <p class="hint" style="font-size:.95rem;color:var(--ink)">Bottles that aren't on the sheets. Everyone with the app sees this list, so it's ready to hand to whoever sets up SKUs.</p>
+      <label class="btn btn-primary" for="nsPhoto">Add a bottle</label>
+      <input id="nsPhoto" class="vh" type="file" accept="image/*" capture="environment">
+      <div class="btn-row"><button class="btn btn-quiet" id="nsCopy" type="button">Copy list</button><label class="toggle"><input type="checkbox" id="nsShowDone"> Show done</label></div>
+      <p class="hint" id="nsNote" hidden></p>
+    </section>
+    <div class="list" id="nsList"></div>
+  </div>
+
+  <div class="panel" data-panel="sheets" hidden>
+    <section class="snap" aria-label="Inventory sheet list">
+      <div><div class="label">Current list</div><p id="shInfo" style="margin:4px 0 0"></p></div>
+      <p class="hint">When the inventory sheets change, upload the new ones here. An Excel or CSV export works best; a PDF works if each row starts with the item code. You'll see what's added and removed before anything changes, and the new list updates for everyone.</p>
+      <label class="btn btn-primary" for="shFile" id="shPick">Upload new sheets</label>
+      <input id="shFile" class="vh" type="file" accept=".pdf,.xlsx,.xls,.csv,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+      <div id="shStatus" class="status" hidden></div>
+      <div id="shPreview" hidden></div>
+      <button class="btn btn-danger" id="shRevert" type="button" hidden>Go back to the original list</button>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" hidden role="status"></div>
+<div class="overlay" id="overlay" hidden role="dialog" aria-label="Barcode, full screen"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
