@@ -412,18 +412,57 @@ const guessCat=t=>{ t=norm(t); if(/\b(beer|ipa|lager|pils|cider|birra|kolsch|ale
   return "Wine"; };
 // Header names that probably mean each field.
 const FIELD_GUESS={code:/^(sku|code|item ?(no|num|number|#|code)|item|article|plu|id)$/i,name:/^(name|description|desc|item ?name|product|item description)$/i,producer:/^(producer|brand|vendor|winery|distiller|maker|supplier)$/i,category:/^(category|cat|type|class|department|dept)$/i,page:/^(page|sheet|pg|location|section)$/i};
+// Inventory report laid out as item cards in columns: code (+unit) / name (1-2 lines) / producer, under category headers.
+const SECT=[[/BEER|CIDER|BIRRA/,"Beer/Cider"],[/WINE|VINO/,"Wine"],[/LIQUOR|SPIRIT|LIQUEUR/,"Liquor"],[/BEVERAGE|JUICE|SODA|MIXER|N\/A/,"N/A / Mixers / Juice"],[/.*/,"Pantry / Produce / Misc"]];
+function pdfCards(pages){
+  const items=[], WORDS=new Set();
+  pages.forEach(its=>its.forEach(t=>t.s.split(/\s+/).forEach(w=>{ w=w.replace(/[^A-Z0-9']/gi,"").toUpperCase(); if(w.length>=3) WORDS.add(w); })));
+  pages.forEach((its,pi)=>{
+    const codeXs=[]; its.forEach(t=>{ if(/^\d{5,9}$/.test(t.s)) codeXs.push(t.x); });
+    const cols=[...new Set(codeXs.map(x=>Math.round(x/20)))].map(k=>Math.min(...codeXs.filter(x=>Math.round(x/20)===k))).sort((a,b)=>a-b);
+    if(!cols.length) return;
+    const colOf=x=>{ let c=0; cols.forEach((cx,i)=>{ if(x+12>=cx) c=i; }); return c; };
+    const byCol=cols.map(()=>[]);
+    its.forEach(t=>{ if(/^\d{1,2}\/\d{1,2}\/\d{4}/.test(t.s)||/^pagina\b|^page\b/i.test(t.s)||t.h>=14) return; byCol[colOf(t.x)].push(t); });
+    for(const col of byCol){
+      col.sort((a,b)=>b.y-a.y||a.x-b.x);
+      let cat="", card=null; const codeYs=col.filter(t=>/^\d{5,9}$/.test(t.s)).map(t=>t.y);
+      const finish=()=>{ if(!card) return; const L=card.lines;
+        let prod="", name=L.map(l=>l.s);
+        if(L.length>=2){ const gap=L[L.length-2].y-L[L.length-1].y, lineGap=L.length>=3?L[0].y-L[1].y:0;
+          if(gap>11||L.length>=2&&gap>lineGap+3){ prod=L[L.length-1].s; name=name.slice(0,-1); } }
+        let nm=""; name.forEach(s=>{ const a=nm.match(/(\S+)$/), b=s.match(/^(\S+)/);
+          // Lines are cut at a fixed width, sometimes mid-word ("SAN P" + "ELLEGRINO"): rejoin when that makes a known word.
+          nm+=!nm?s:(nm.length>=34&&a&&b&&WORDS.has((a[1]+b[1]).replace(/[^A-Z0-9']/gi,"").toUpperCase()))?s:" "+s; });
+        items.push({code:card.code,name:nm.replace(/\s+/g," ").trim(),producer:prod.trim(),category:card.cat,page:String(pi+1)}); card=null; };
+      for(let i=0;i<col.length;i++){ const t=col[i];
+        if(/\(([A-Z0-9]{1,4})\)$/.test(t.s)&&!/^\d/.test(t.s)&&(!card||card.lines.length)){ finish(); const lab=t.s.toUpperCase(); cat=(SECT.find(([r])=>r.test(lab))||[])[1]||""; continue; }
+        // unit next to a code (EA, BT, CS…) or the short tag beside a section name
+        if(/^[A-Z0-9]{1,4}$/.test(t.s)&&!/^\d{5,9}$/.test(t.s)&&(codeYs.some(y=>Math.abs(y-t.y)<3)||col.some(o=>o!==t&&Math.abs(o.y-t.y)<1.5&&/\([A-Z0-9]{1,4}\)$/.test(o.s)))) continue;
+        if(/^\d{5,9}$/.test(t.s)){ finish(); card={code:t.s,y:t.y,cat,lines:[]}; continue; }
+        if(card) card.lines.push({s:t.s.trim(),y:t.y});
+      }
+      finish();
+    }
+  });
+  return items;
+}
 async function readSheetRows(file){
   const name=file.name.toLowerCase();
   if(name.endsWith(".pdf")||file.type==="application/pdf"){
     if(!window.pdfjsLib){ await loadScript("vendor/pdf.min.js"); pdfjsLib.GlobalWorkerOptions.workerSrc="vendor/pdf.worker.min.js"; }
-    const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise; const items=[];
+    const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise; const items=[], pages=[];
     for(let i=1;i<=pdf.numPages;i++){ const tc=await (await pdf.getPage(i)).getTextContent();
+      pages.push(tc.items.filter(it=>it.str.trim()).map(it=>({x:it.transform[4],y:it.transform[5],s:it.str.trim(),h:it.height||Math.abs(it.transform[3])})));
       const rows={}; tc.items.forEach(it=>{ const y=Math.round(it.transform[5]/3); (rows[y]=rows[y]||[]).push([it.transform[4],it.str]); });
       for(const y of Object.keys(rows).sort((a,b)=>b-a)){ const line=rows[y].sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join(" ").replace(/\s+/g," ").trim();
         const mm=line.match(/^(\d{5,9})\s+(.{3,})$/); const m2=!mm&&line.match(/^(.{3,}?)\s+(\d{5,9})(\s|$)/);
         const code=mm?mm[1]:m2?m2[2]:null, rest=(mm?mm[2]:m2?m2[1]:"").replace(/(\s+[\d.,_]+)+$/,"").trim();
         if(code&&rest) items.push({code,name:rest,producer:"",category:"",page:String(i)}); } }
-    return {mode:"pdf",items};
+    // Reports that print each item as a card (code, then name, then producer) rather than one row per item.
+    const lone=pages.flat().filter(t=>/^\d{5,9}$/.test(t.s)).length;
+    if(lone>=10&&lone>=items.length/2){ const cardItems=pdfCards(pages); if(cardItems.length>=10) return {mode:"pdf",items:cardItems,note:"Read from the PDF's item cards (code, name, producer, and the section each is under). Item names already on file are kept."}; }
+    return {mode:"pdf",items,note:"Read from the PDF: each row that starts or ends with an item code. Item names already on file are kept."};
   }
   if(!window.XLSX) await loadScript("vendor/xlsx.full.min.js");
   const wb=XLSX.read(await file.arrayBuffer(),{type:"array"}); const sheets=[];
@@ -460,7 +499,7 @@ $("shFile").onchange=async e=>{
     shStatus("Reading the file…",true);
     SHEET={file:file.name,...await readSheetRows(file)};
     shStatus("");
-    if(SHEET.mode==="pdf") return previewList(mergeItems(SHEET.items),"Read from the PDF: each row that starts or ends with an item code. Item names already on file are kept.");
+    if(SHEET.mode==="pdf") return previewList(mergeItems(SHEET.items),SHEET.note);
     // Spreadsheet: let the person confirm which column is which.
     const sh=SHEET.sheets[0]; if(!sh) throw new Error("That file looks empty.");
     const hi=headerIndex(sh.rows); const heads=(hi>=0?sh.rows[hi]:sh.rows[0]).map((h,i)=>String(h).trim()||`Column ${i+1}`);
@@ -481,12 +520,16 @@ function previewList(list,note){
     <div class="diff"><div><b>${added.length}</b> new${added.length?`<ul>${li(added)}</ul>`:""}</div>
     <div><b>${removed.length}</b> no longer on the sheets${removed.length?`<ul>${li(removed)}</ul>`:""}</div>
     <div><b>${changed.length}</b> on a different page</div></div>
-    <p class="hint">Check a few codes against the sheets before switching. Photos, linked barcodes, and counts stay attached to their codes.</p>
-    <div class="btn-row"><button class="btn btn-primary" id="shApply" type="button">Use this list</button><button class="btn btn-quiet" id="shCancel" type="button">Cancel</button></div></div>`;
+    <p class="hint">Check a few codes against the sheets before saving. Photos, linked barcodes, and counts stay attached to their codes.</p>
+    ${added.length?`<button class="btn btn-primary" id="shAdd" type="button">Add the ${added.length} new item${added.length===1?"":"s"}, keep everything else</button>`:""}
+    <div class="btn-row"><button class="btn btn-quiet" id="shApply" type="button">Replace with this list${removed.length?` (removes ${removed.length})`:""}</button><button class="btn btn-quiet" id="shCancel" type="button">Cancel</button></div></div>`;
   $("shPreview").hidden=false;
-  $("shApply").onclick=async()=>{ const b=$("shApply"); b.disabled=true; b.textContent="Saving…";
-    try{ await logged(`Uploaded a new item list (${list.length} items, ${SHEET.file})`,[["catalog/current",{items:list.map(r=>({c:r[0],n:r[1],p:r[2],k:r[3],g:r[4],a:r[5]||""})),source:SHEET.file,at:now()}]]); $("shPreview").hidden=true; toast("Item list updated"); }
-    catch{ b.disabled=false; b.textContent="Didn't save, tap to retry"; } };
+  const save=async(btn,items,what)=>{ btn.disabled=true; const tx=btn.textContent; btn.textContent="Saving…";
+    try{ await logged(what,[["catalog/current",{items:items.map(r=>({c:r[0],n:r[1],p:r[2],k:r[3],g:r[4],a:r[5]||""})),source:SHEET.file,at:now()}]]); $("shPreview").hidden=true; toast("Item list updated"); }
+    catch{ btn.disabled=false; btn.textContent="Didn't save, tap to retry"; } };
+  $("shApply").onclick=()=>save($("shApply"),list,`Replaced the item list (${list.length} items, ${SHEET.file})`);
+  if($("shAdd")) $("shAdd").onclick=()=>{ const merged=[...ITEMS,...added].sort((a,b)=>a[2].localeCompare(b[2])||a[1].localeCompare(b[1]));
+    save($("shAdd"),merged,`Added ${added.length} new item${added.length===1?"":"s"} from ${SHEET.file}`); };
   $("shCancel").onclick=()=>{ $("shPreview").hidden=true; };
 }
 $("shRevert").onclick=async()=>{ if(!confirm("Go back to the original item list for everyone?")) return;
