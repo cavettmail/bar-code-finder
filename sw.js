@@ -1,5 +1,5 @@
 // Keeps the app working with a weak signal: the app files load from the phone, then update in the background.
-const VERSION = "bcf-v3";
+const VERSION = "bcf-v4";
 const SHELL = ["./", "index.html", "app.js", "store.js", "config.js", "manifest.webmanifest", "data/items.enc.json", "icon-192.png", "ai.js"];
 // The label reader (engine + English data) and barcode reader, so snaps work with no signal from day one.
 const BIG = ["vendor/tesseract.min.js", "vendor/zxing.min.js", "vendor/ocr/worker.min.js", "vendor/ocr/eng.traineddata.gz",

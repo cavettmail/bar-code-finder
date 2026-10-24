@@ -737,11 +737,19 @@ async function encryptItems(list,code){
   const enc=u=>btoa(String.fromCharCode(...u));
   return {v:1,iter,salt:enc(salt),iv:enc(iv),ct:btoa([...ct].map(c=>String.fromCharCode(c)).join(""))};
 }
-$("encSave").onclick=async()=>{ const b=$("encSave"); b.disabled=true;
+$("encSave").onclick=async()=>{ const b=$("encSave"), msg=$("encMsg"); b.disabled=true; msg.textContent="Making the file…";
   try{ const out=await encryptItems(ITEMS.map(r=>r.slice(0,6)),TEAM_CODE);
-    const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:"application/json"})); a.download="items.enc.json"; a.click();
-    toast(`Saved ${ITEMS.length} items. Upload it to the data folder on GitHub.`); }
-  catch{ toast("Couldn't make the file"); } finally{ b.disabled=false; } };
+    const file=new File([JSON.stringify(out)],"items.enc.json",{type:"application/json"});
+    const done=`Saved ${ITEMS.length} items as items.enc.json. Upload it to the data folder on GitHub, replacing the old one.`;
+    // Phones (especially iPhone home-screen apps) often block downloads, so use the share sheet when there is one: "Save to Files" or Drive.
+    if(navigator.canShare?.({files:[file]})){
+      try{ await navigator.share({files:[file],title:"items.enc.json"}); msg.textContent=done; return; }
+      catch(e){ if(e?.name==="AbortError"){ msg.textContent="Cancelled. Tap again and choose Save to Files (or Drive)."; return; } }
+    }
+    const url=URL.createObjectURL(file), a=document.createElement("a"); a.href=url; a.download="items.enc.json"; document.body.appendChild(a); a.click(); a.remove();
+    msg.innerHTML=`${esc(done)} <a href="${url}" download="items.enc.json">Download didn't start? Tap here.</a>`; }
+  catch(e){ console.error(e); msg.textContent="Couldn't make the file. Close the app fully, reopen it, and try again."; }
+  finally{ b.disabled=false; } };
 
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ if(!$("admin").hidden) closeAdmin(); else if(!$("pinDlg").hidden) $("pinDlg").hidden=true; } });
 $("adminOut").onclick=async()=>{ try{ await DB.doc("admins/"+DB.uid).delete(); }catch{} closeAdmin(); toast("Signed out of manager mode"); };
