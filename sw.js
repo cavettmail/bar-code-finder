@@ -1,10 +1,12 @@
 // Keeps the app working with a weak signal: the app files load from the phone, then update in the background.
-const VERSION = "bcf-v2";
-const SHELL = ["./", "index.html", "app.js", "store.js", "config.js", "manifest.webmanifest", "data/items.enc.json", "icon-192.png"];
-const BIG = ["vendor/tesseract.min.js", "vendor/zxing.min.js", "vendor/ocr/worker.min.js"];
+const VERSION = "bcf-v3";
+const SHELL = ["./", "index.html", "app.js", "store.js", "config.js", "manifest.webmanifest", "data/items.enc.json", "icon-192.png", "ai.js"];
+// The label reader (engine + English data) and barcode reader, so snaps work with no signal from day one.
+const BIG = ["vendor/tesseract.min.js", "vendor/zxing.min.js", "vendor/ocr/worker.min.js", "vendor/ocr/eng.traineddata.gz",
+  "vendor/ocr/tesseract-core-simd-lstm.wasm.js", "vendor/ocr/tesseract-core-lstm.wasm.js"];
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL).then(() => c.addAll(BIG).catch(() => {}))).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL).then(() => Promise.all(BIG.map(u => c.add(u).catch(() => {}))))).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));

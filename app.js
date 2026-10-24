@@ -179,6 +179,8 @@ async function run(input){
   try{
     setStatus("Reading the label…",true);
     const sigP=fileSig(file).catch(()=>null);
+    // Online with a key: ask the AI at the same time as the on-phone readers, so it costs no extra waiting.
+    const aiP=aiOn()?askAI(file):null;
     const upc=await readUPC(file); lastUPC=upc;
     if(upc&&UPC[upc]&&byCode[UPC[upc]]){
       setStatus("");
@@ -186,24 +188,48 @@ async function run(input){
         <button class="copy" type="button" data-wrongupc="1">Not this bottle? Show other matches</button></div>`);
       hydrate(resultsEl); $("phase").textContent="Found it"; addRecent(UPC[upc]); return;
     }
-    const text=await readLabel(file); lastText=text; lastSig=await sigP;
-    showCandidates(text,upc);
+    let text="", ocrFailed=false;
+    try{ text=await readLabel(file); }catch{ ocrFailed=true; }
+    if(aiP) setStatus("Checking the photo with AI…",true);
+    const ai=aiP?await aiP:null;
+    lastText=text; lastSig=await sigP;
+    if(ocrFailed&&!ai?.matches?.length) throw new Error("unreadable");
+    showCandidates(text,upc,ai);
   }catch(e){ setStatus(""); resultsEl.insertAdjacentHTML("beforeend",`<div class="card"><div class="nosku">The label couldn't be read. Reload the app and try again, or type the name in search below.</div>${noSkuBtn()}</div>`); }
   finally{ busy=false; }
 }
+/* ---------- AI photo match (online only) ---------- */
+let AI=ls.get("bcf-ai",null); // {key, model} set by a manager; shared with the team through Firebase
+const aiOn=()=>!!(AI?.key&&navigator.onLine);
+let aiMod=null;
+async function askAI(file){
+  try{
+    aiMod=aiMod||await import("./ai.js");
+    const img=await jpeg(file,1024,.8);
+    return await aiMod.aiIdentify({key:AI.key,model:AI.model,imageDataUrl:img,items:ITEMS});
+  }catch(e){ console.warn("AI match failed",e); return {error:true,matches:[],seen:""}; }
+}
 const noSkuBtn=()=>`<button class="btn btn-quiet" type="button" data-addnosku="1">Not on the sheets? Add it to the No SKU list</button>`;
-function showCandidates(text,upc){
+function showCandidates(text,upc,ai){
   setStatus("");
-  lastWords=[...new Set(toks(text))];
+  lastWords=[...new Set(toks(text+" "+(ai?.seen||"")))];
   const tx=rankText(text), ph=rankPhotos(lastSig);
   const maxT=Math.max(0,...tx.values())||1, codes=new Set([...tx.keys(),...[...ph].filter(([,s])=>s>=.62).map(([c])=>c)]);
-  const scored=[...codes].map(c=>{ const t=(tx.get(c)||0)/maxT, p=ph.get(c)||0; return [c, t+2*Math.max(0,p-.55), p]; })
-    .filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  let scored=[...codes].map(c=>{ const t=(tx.get(c)||0)/maxT, p=ph.get(c)||0; return [c, t+2*Math.max(0,p-.55), p, 0]; })
+    .filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+  // AI picks go first; label and photo matches fill in below.
+  const aiHits=(ai?.matches||[]).filter(m=>byCode[m.code]&&m.confidence>=.3);
+  if(aiHits.length){ const pos=new Map(scored.map(x=>[x[0],x]));
+    scored=[...aiHits.map(m=>[m.code,9+m.confidence,pos.get(m.code)?.[2]||0,m.confidence]), ...scored.filter(x=>!aiHits.some(m=>m.code===x[0]))]; }
+  scored=scored.slice(0,6);
   if($("phase")) $("phase").textContent=scored.length?"Tap the one that matches":"No match found";
   const upcLine=upc?`<div class="upcnote">Read the bottle's barcode: ${esc(upc)}. Tap the right item and it's linked for next time.</div>`:"";
+  const aiLine=ai&&!ai.error?(ai.seen?`<div class="label" style="margin-top:8px">AI read the label as</div><div class="ocr">${esc(ai.seen)}</div>`:"")
+    :ai?.error?`<div class="hint">AI check didn't go through, so these are from the label text only.</div>`
+    :(AI?.key&&!navigator.onLine)?`<div class="hint">Offline: matched from the label text only. AI matching comes back when you're online.</div>`:"";
   resultsEl.insertAdjacentHTML("beforeend", `<div class="card">
-    <div class="label">Words read from the label</div><div class="ocr">${esc(text||"(no text found)")}</div>${upcLine}
-    ${scored.length?`<div class="cands">${scored.map(([c,,p],i)=>{ const r=byCode[c]; return `<button class="cand${i===0?" best":""}" type="button" data-pick="${c}"><span>${esc(r[1])}</span><span class="code">${c}</span><span class="sub">${esc(r[2])} · ${pagesTxt(r[4])}${p>=.7?" · looks like the saved photo":""}</span></button>`; }).join("")}</div>`
+    <div class="label">Words read from the label</div><div class="ocr">${esc(text||"(no text found)")}</div>${aiLine}${upcLine}
+    ${scored.length?`<div class="cands">${scored.map(([c,,p,ac],i)=>{ const r=byCode[c]; return `<button class="cand${i===0?" best":""}" type="button" data-pick="${c}"><span>${esc(r[1])}</span><span class="code">${c}</span><span class="sub">${esc(r[2])} · ${pagesTxt(r[4])}${ac?` · AI match${ac>=.8?"":" (not sure)"}`:""}${p>=.7?" · looks like the saved photo":""}</span></button>`; }).join("")}</div>`
       :`<div class="nosku">Couldn't match this to anything on the sheets. Try a closer, straighter photo of the front label, or type the name below.</div>`}
     ${noSkuBtn()}
     <div class="match" hidden></div></div>`);
@@ -247,7 +273,7 @@ document.addEventListener("click",async e=>{
   const c=t.closest("[data-copy]"); if(c){ const tx=c.textContent; try{ await navigator.clipboard.writeText(c.dataset.copy); c.textContent="Copied"; }catch{ c.textContent=c.dataset.copy; } setTimeout(()=>c.textContent=tx,1400); return; }
   const p=t.closest("[data-pick]"); if(p){ pick(p); return; }
   const w=t.closest("[data-wrongupc]"); if(w){ w.closest(".card").remove(); setStatus("Reading the label…",true);
-    try{ lastText=await readLabel(lastFile); }catch{ lastText=""; } lastSig=await fileSig(lastFile).catch(()=>null); showCandidates(lastText,lastUPC); return; }
+    try{ lastText=await readLabel(lastFile); }catch{ lastText=""; } lastSig=await fileSig(lastFile).catch(()=>null); showCandidates(lastText,lastUPC,aiOn()?await askAI(lastFile):null); return; }
   const s=t.closest("[data-star]"); if(s){ toggleFav(s.dataset.star); return; }
   const st=t.closest("[data-step]"); if(st){ const box=st.closest("[data-cnt]"), inp=box.querySelector("input"); const v=Math.max(0,(parseFloat(inp.value)||0)+Number(st.dataset.step)); inp.value=fmtQty(v); saveCount(box.dataset.cnt,v,box); return; }
   const q=t.closest("[data-show]"); if(q){ showTab("find"); showItem(q.dataset.show); return; }
@@ -406,14 +432,21 @@ function renderSheets(){
 }
 function shStatus(h,spin){ const el=$("shStatus"); el.hidden=!h; el.innerHTML=(spin?'<span class="spin"></span>':"")+(h||""); }
 const guessCat=t=>{ t=norm(t); if(/\b(beer|ipa|lager|pils|cider|birra|kolsch|ale)\b/.test(t)) return "Beer/Cider";
-  if(/\b(juice|soda|tonic|water|bitters|syrup|grenadine|cola|limonata|n a|zero|espresso|capsules|nectar|ice)\b/.test(t)) return "N/A / Mixers / Juice";
-  if(/\b(vodka|gin|rum|tequila|mezcal|whisk(e)?y|bourbon|scotch|rye|amaro|liqueur|vermouth|aperitivo|bitter|grappa|limoncello|brandy|sambuca|fernet|campari|aperol|chartreuse|maraschino)\b/.test(t)) return "Liquor";
+  if(/\b(juice|lemonade|soda|tonic|water|bitters|syrup|grenadine|cola|limonata|n a|zero|espresso|capsules|nectar|ice)\b/.test(t)) return "N/A / Mixers / Juice";
+  if(/\b(vodka|gin|rum|tequila|mezcal|whisk(e)?y|bourbon|scotch|rye|amaro|liqueur|vermouth|aperitivo|bitter|grappa|limoncello|brandy|sambuca|fernet|campari|aperol|chartreuse|maraschino|nog)\b/.test(t)) return "Liquor";
   if(/\b(lemons?|limes?|oranges?|mint|basil|sugar|milk|evoo|olio|vinegar|cherries|pepper|glass)\b/.test(t)) return "Pantry / Produce / Misc";
   return "Wine"; };
 // Header names that probably mean each field.
 const FIELD_GUESS={code:/^(sku|code|item ?(no|num|number|#|code)|item|article|plu|id)$/i,name:/^(name|description|desc|item ?name|product|item description)$/i,producer:/^(producer|brand|vendor|winery|distiller|maker|supplier)$/i,category:/^(category|cat|type|class|department|dept)$/i,page:/^(page|sheet|pg|location|section)$/i};
 // Inventory report laid out as item cards in columns: code (+unit) / name (1-2 lines) / producer, under category headers.
 const SECT=[[/BEER|CIDER|BIRRA/,"Beer/Cider"],[/WINE|VINO/,"Wine"],[/LIQUOR|SPIRIT|LIQUEUR/,"Liquor"],[/BEVERAGE|JUICE|SODA|MIXER|N\/A/,"N/A / Mixers / Juice"],[/.*/,"Pantry / Produce / Misc"]];
+// Category tags printed on the Eataly inventory report.
+const SHEET_CAT={VI:"Wine",RS:"",U2:"Liquor",U1:"Beer/Cider",QB:"N/A / Mixers / Juice",GH:"N/A / Mixers / Juice",GF:"Pantry / Produce / Misc",GD:"Pantry / Produce / Misc",OF:"",RB:""};
+function catFromSheet(tag,name){ const c=SHEET_CAT[tag];
+  if(c) return c;
+  const g=guessCat(name);
+  if(tag==="OF") return g==="Wine"?"Pantry / Produce / Misc":g; // fresh produce, juices, olives
+  return g; }
 function pdfCards(pages){
   const items=[], WORDS=new Set();
   pages.forEach(its=>its.forEach(t=>t.s.split(/\s+/).forEach(w=>{ w=w.replace(/[^A-Z0-9']/gi,"").toUpperCase(); if(w.length>=3) WORDS.add(w); })));
@@ -431,15 +464,26 @@ function pdfCards(pages){
         let prod="", name=L.map(l=>l.s);
         if(L.length>=2){ const gap=L[L.length-2].y-L[L.length-1].y, lineGap=L.length>=3?L[0].y-L[1].y:0;
           if(gap>11||L.length>=2&&gap>lineGap+3){ prod=L[L.length-1].s; name=name.slice(0,-1); } }
+        const P=" "+prod.toUpperCase()+" ";
         let nm=""; name.forEach(s=>{ const a=nm.match(/(\S+)$/), b=s.match(/^(\S+)/);
-          // Lines are cut at a fixed width, sometimes mid-word ("SAN P" + "ELLEGRINO"): rejoin when that makes a known word.
-          nm+=!nm?s:(nm.length>=34&&a&&b&&WORDS.has((a[1]+b[1]).replace(/[^A-Z0-9']/gi,"").toUpperCase()))?s:" "+s; });
-        items.push({code:card.code,name:nm.replace(/\s+/g," ").trim(),producer:prod.trim(),category:card.cat,page:String(pi+1)}); card=null; };
+          // Lines are cut at a fixed width, sometimes mid-word ("SAN P" + "ELLEGRINO", "FONTANAFREDDA 1" + "982"): rejoin them.
+          let glue=false;
+          if(nm.length>=34&&a&&b&&!/[,)]$/.test(a[1])){ const A=a[1].toUpperCase(), B=b[1].toUpperCase();
+            glue=WORDS.has((A+B).replace(/[^A-Z0-9']/gi,""))            // makes a word seen elsewhere in the report
+              ||(/^\d+$/.test(A)&&/^\d+$/.test(B))                      // a number split in two
+              ||A.length===1||(B.length===1&&B!=="&")                   // a stray letter on either side
+              ||P.includes((A+B).slice(0,A.length+Math.min(B.length,3))); } // matches the producer ("PASS"+"ALACQUA")
+          nm+=!nm?s:glue?s:" "+s; });
+        nm=nm.replace(/\s+/g," ").replace(/\s+,/g,",").trim();
+        items.push({code:card.code,name:nm,producer:prod.trim(),category:card.cat,sheetCat:card.sheetCat||"",page:String(pi+1)}); card=null; };
+      // The report's own category tag (VI, U2, GH…) prints on the same line as the item code.
+      const tags=col.filter(t=>(t.s in SHEET_CAT)&&codeYs.some(y=>Math.abs(y-t.y)<4));
+      const tagFor=y=>(tags.find(t=>Math.abs(t.y-y)<4)||{}).s||"";
       for(let i=0;i<col.length;i++){ const t=col[i];
         if(/\(([A-Z0-9]{1,4})\)$/.test(t.s)&&!/^\d/.test(t.s)&&(!card||card.lines.length)){ finish(); const lab=t.s.toUpperCase(); cat=(SECT.find(([r])=>r.test(lab))||[])[1]||""; continue; }
         // unit next to a code (EA, BT, CS…) or the short tag beside a section name
         if(/^[A-Z0-9]{1,4}$/.test(t.s)&&!/^\d{5,9}$/.test(t.s)&&(codeYs.some(y=>Math.abs(y-t.y)<3)||col.some(o=>o!==t&&Math.abs(o.y-t.y)<1.5&&/\([A-Z0-9]{1,4}\)$/.test(o.s)))) continue;
-        if(/^\d{5,9}$/.test(t.s)){ finish(); card={code:t.s,y:t.y,cat,lines:[]}; continue; }
+        if(/^\d{5,9}$/.test(t.s)){ finish(); card={code:t.s,y:t.y,cat,sheetCat:tagFor(t.y),lines:[]}; continue; }
         if(card) card.lines.push({s:t.s.trim(),y:t.y});
       }
       finish();
@@ -461,8 +505,8 @@ async function readSheetRows(file){
         if(code&&rest) items.push({code,name:rest,producer:"",category:"",page:String(i)}); } }
     // Reports that print each item as a card (code, then name, then producer) rather than one row per item.
     const lone=pages.flat().filter(t=>/^\d{5,9}$/.test(t.s)).length;
-    if(lone>=10&&lone>=items.length/2){ const cardItems=pdfCards(pages); if(cardItems.length>=10) return {mode:"pdf",items:cardItems,note:"Read from the PDF's item cards (code, name, producer, and the section each is under). Item names already on file are kept."}; }
-    return {mode:"pdf",items,note:"Read from the PDF: each row that starts or ends with an item code. Item names already on file are kept."};
+    if(lone>=10&&lone>=items.length/2){ const cardItems=pdfCards(pages); if(cardItems.length>=10) return {mode:"pdf",items:cardItems,note:"Read from the PDF's item cards: code, name, producer, category and page for each item."}; }
+    return {mode:"pdf",items,note:"Read from the PDF: each row that starts or ends with an item code."};
   }
   if(!window.XLSX) await loadScript("vendor/xlsx.full.min.js");
   const wb=XLSX.read(await file.arrayBuffer(),{type:"array"}); const sheets=[];
@@ -485,9 +529,9 @@ function mergeItems(raw){
   for(const it of raw){ const old=byCode[it.code]||BASE_ITEMS.find(r=>r[0]===it.code); const pg=it.page||"";
     const prev=found.get(it.code);
     if(prev){ if(pg){ const ps=new Set(prev[4].split(", ").filter(Boolean)); ps.add(pg); prev[4]=[...ps].sort((a,b)=>a-b).join(", "); } continue; }
-    // Keep the names already on file for codes we know; new codes take what the sheet says.
-    const name=old?old[1]:it.name, producer=old?old[2]:it.producer;
-    const cat=CATS.find(c=>norm(c)===norm(it.category))||(old?old[3]:guessCat(it.name+" "+it.category));
+    // The sheet is the source of truth: take its name and producer, and only fall back to what's on file when the sheet leaves them blank.
+    const name=it.name||old?.[1], producer=it.producer||old?.[2];
+    const cat=(it.sheetCat?catFromSheet(it.sheetCat,it.name):"")||CATS.find(c=>norm(c)===norm(it.category))||(old?old[3]:guessCat(it.name+" "+it.category));
     found.set(it.code,[it.code,name||it.code,producer||"",cat,pg||(old?old[4]:"?"),old?.[5]||""]); }
   return [...found.values()].sort((a,b)=>a[2].localeCompare(b[2])||a[1].localeCompare(b[1]));
 }
@@ -572,6 +616,7 @@ async function startShared(teamId){
   DB.collection("upc").onSnapshot(snap=>{ const m={...UPC}; snap.docs.forEach(d=>{ const v=d.data(); if(typeof v?.code==="string") m[d.id]=v.code; }); UPC=m; ls.set("bcf-upc",UPC); },err);
   DB.collection("learn").onSnapshot(snap=>{ const m={}; snap.docs.forEach(d=>{ const v=d.data(); if(Array.isArray(v?.words)) m[d.id]=v.words.filter(w=>typeof w==="string").slice(0,60); }); SHARED_LEARN=m; buildIndex(); },err);
   DB.collection("nosku").orderBy("at","desc").onSnapshot(snap=>{ NOSKU=snap.docs.map(d=>({id:d.id,...d.data()})).filter(n=>!n.img||String(n.img).startsWith("data:image/")); renderNoSku(); },err);
+  DB.doc("config/ai").onSnapshot(snap=>{ const v=snap.exists?snap.data():null; AI=v&&typeof v.key==="string"&&v.key?{key:v.key,model:String(v.model||"")}:null; ls.set("bcf-ai",AI); renderAI(); },()=>{});
   DB.doc("catalog/current").onSnapshot(snap=>{ const v=snap.exists?snap.data():null;
     if(v&&Array.isArray(v.items)&&v.items.length>=10){ CATALOG={at:v.at,source:v.source}; setItems(v.items.filter(r=>r&&r.c&&r.n).map(r=>[String(r.c),String(r.n),String(r.p||""),String(r.k||"Liquor"),String(r.g||"?"),String(r.a||"")])); }
     else if(CATALOG){ CATALOG=null; setItems(BASE_ITEMS); } },err);
@@ -665,10 +710,39 @@ function openAdmin(){
   L(DB.collection("revoked"),s=>{ ADM.revoked=new Set(s.docs.map(d=>d.id)); renderPeople(); });
   L(DB.collection("approved"),s=>{ ADM.approved=new Set(s.docs.map(d=>d.id)); renderPeople(); });
   L(DB.doc("config/approvalOn"),s=>{ ADM.approvalOn=s.exists; $("apOn").checked=s.exists; renderPeople(); });
-  loadHistory(); cleanHistory();
+  loadHistory(); cleanHistory(); renderAI();
 }
 function closeAdmin(){ $("admin").hidden=true; ADM.unsub.forEach(f=>{ try{f();}catch{} }); ADM.unsub=[]; }
 $("adminClose").onclick=closeAdmin;
+/* ---------- Manager: AI key ---------- */
+function renderAI(){ const st=$("aiState"); if(!st) return;
+  st.textContent=AI?.key?`On. Using ${AI.model||"the default model"} when phones are online.`:"Off. Snaps use the on-phone barcode and label readers only.";
+  $("aiOff").hidden=!AI?.key; if(!$("aiModel").value) $("aiModel").value=AI?.model||"gemini-3.5-flash-lite"; }
+$("aiSave").onclick=async()=>{ const key=$("aiKey").value.trim()||AI?.key, model=$("aiModel").value.trim(), msg=$("aiMsg"), b=$("aiSave");
+  if(!key){ msg.textContent="Paste the API key first."; return; }
+  b.disabled=true; msg.textContent="Testing the key…";
+  try{ aiMod=aiMod||await import("./ai.js"); await aiMod.aiTest(key,model);
+    await DB.doc("config/ai").set({key,model,at:now(),by:ME.name||""}); $("aiKey").value=""; msg.textContent="Working. AI photo search is on for everyone."; }
+  catch(e){ msg.textContent=`That didn't work: ${e?.message||"couldn't reach Google"}. Check the key and the model name.`; }
+  finally{ b.disabled=false; } };
+$("aiOff").onclick=async()=>{ if(!confirm("Turn off AI photo search for everyone?")) return;
+  try{ await DB.doc("config/ai").delete(); $("aiMsg").textContent="AI photo search is off."; }catch{ $("aiMsg").textContent="Couldn't change it. Check your connection."; } };
+
+/* ---------- Manager: save the current list as the app's built-in (encrypted) file ---------- */
+async function encryptItems(list,code){
+  const salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12)), iter=150000;
+  const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(code),"PBKDF2",false,["deriveKey"]);
+  const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:iter,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["encrypt"]);
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(JSON.stringify(list))));
+  const enc=u=>btoa(String.fromCharCode(...u));
+  return {v:1,iter,salt:enc(salt),iv:enc(iv),ct:btoa([...ct].map(c=>String.fromCharCode(c)).join(""))};
+}
+$("encSave").onclick=async()=>{ const b=$("encSave"); b.disabled=true;
+  try{ const out=await encryptItems(ITEMS.map(r=>r.slice(0,6)),TEAM_CODE);
+    const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:"application/json"})); a.download="items.enc.json"; a.click();
+    toast(`Saved ${ITEMS.length} items. Upload it to the data folder on GitHub.`); }
+  catch{ toast("Couldn't make the file"); } finally{ b.disabled=false; } };
+
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ if(!$("admin").hidden) closeAdmin(); else if(!$("pinDlg").hidden) $("pinDlg").hidden=true; } });
 $("adminOut").onclick=async()=>{ try{ await DB.doc("admins/"+DB.uid).delete(); }catch{} closeAdmin(); toast("Signed out of manager mode"); };
 

@@ -34,7 +34,8 @@ service cloud.firestore {
         allow write: if isAdmin();
       }
       match /config/{doc} {
-        allow read: if signedIn();
+        // The AI key (config/ai) is only readable by phones whose access is on.
+        allow read: if (signedIn() && doc != "ai") || canUse();
         allow write: if isAdmin();
       }
       // Change history, kept 30 days so a manager can undo changes.

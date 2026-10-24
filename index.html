@@ -268,7 +268,7 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
   <div class="panel" data-panel="sheets" hidden>
     <section class="snap" aria-label="Inventory sheet list">
       <div><div class="label">Current list</div><p id="shInfo" style="margin:4px 0 0"></p></div>
-      <p class="hint">When the inventory sheets change, upload the new ones here. An Excel or CSV export works best; the PDF inventory report works too. You'll see what's added and removed before anything changes, and the new list updates for everyone.</p>
+      <p class="hint">When the inventory sheets change, upload the new ones here. The PDF inventory report works best; an Excel or CSV export works too. You'll see what's added and removed before anything changes, and the new list updates for everyone.</p>
       <label class="btn btn-primary" for="shFile" id="shPick">Upload new sheets</label>
       <input id="shFile" class="vh" type="file" accept=".pdf,.xlsx,.xls,.csv,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
       <div id="shStatus" class="status" hidden></div>
@@ -287,6 +287,7 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     <li>On <b>Find</b>, tap <b>Snap a bottle</b>.</li>
     <li>Fill the frame with the front label, held straight. Include the bottle's barcode if you can.</li>
     <li>Tap the match that's right. The app remembers it, so it gets faster for everyone.</li>
+    <li>Online, the AI also looks at the photo and its pick shows first, marked <b>AI match</b>. With no signal, the app still reads the barcode and label on your phone.</li>
     <li>Scan the big barcode on the card with your scanner. Tap it to go full screen and turn your brightness up.</li></ol>
     <p class="hint" style="margin-top:8px">No luck? Type the producer or name in the search box instead.</p></section>
   <section><h3>Add bottle photos</h3><ul>
@@ -303,8 +304,8 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     <li>Add a short note (name, size).</li>
     <li>The whole team sees the list. Tap <b>SKU added</b> once it's set up, or <b>Copy list</b> to send it on.</li></ol></section>
   <section><h3>New inventory sheets</h3><ol>
-    <li>On <b>Sheets</b>, tap <b>Upload new sheets</b>. Excel or CSV works best.</li>
-    <li>Confirm which column is the item code, name, and so on.</li>
+    <li>On <b>Sheets</b>, tap <b>Upload new sheets</b> and pick the inventory report PDF (or an Excel/CSV export).</li>
+    <li>For Excel or CSV, confirm which column is the item code, name, and so on. The PDF report is read automatically, including page numbers and categories.</li>
     <li>Check what's added and removed. Tap <b>Add the new items</b> to keep everything already there, or <b>Replace with this list</b>. It updates for everyone.</li></ol></section>
   <section><h3>Share with the team</h3><p>Tap <b>Share app</b> and send the link. It has the team code built in, so don't post it publicly.</p></section>
 </div></div>
@@ -324,6 +325,18 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     <p class="hint">Everyone who has opened the app. Turning someone off blocks them from the shared photos, barcodes, No SKU list and item updates right away.</p>
     <label class="toggle"><input type="checkbox" id="apOn"> New phones need my approval</label>
     <div class="list" id="ppl"><div class="empty">Loading…</div></div>
+  </section>
+  <section><h3>AI photo search</h3>
+    <p class="hint">When a phone is online, snapped photos are also checked by Google's Gemini AI against the item list, which catches worn labels and look-alike bottles. Offline, the app still reads barcodes and label text on the phone. Everyone on the team uses the key you add here; they never see or need it.</p>
+    <p id="aiState" class="hint" style="font-weight:600"></p>
+    <label class="field"><span class="label">Gemini API key</span><input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the key from Google AI Studio"></label>
+    <label class="field"><span class="label">Model (leave as is unless it stops working)</span><input id="aiModel" autocomplete="off" spellcheck="false"></label>
+    <div class="btn-row"><button class="btn btn-primary" id="aiSave" type="button">Test and turn on</button><button class="btn btn-quiet" id="aiOff" type="button" hidden>Turn AI off</button></div>
+    <p class="hint" id="aiMsg" aria-live="polite"></p>
+  </section>
+  <section><h3>Item list for offline use</h3>
+    <p class="hint">A phone opening the app for the first time without signal uses the list built into the app. After you upload new sheets, tap below to save the current list as that built-in file, then upload it to the <b>data</b> folder on GitHub. It's locked with the team code, so it stays private.</p>
+    <button class="btn btn-quiet" id="encSave" type="button">Download the built-in list file (items.enc.json)</button>
   </section>
   <section><h3>Undo changes</h3>
     <p class="hint">Puts photos, linked barcodes, the No SKU list and the item list back the way they were. Counts stay on each phone and aren't affected.</p>
