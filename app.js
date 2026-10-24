@@ -198,6 +198,61 @@ async function run(input){
   }catch(e){ setStatus(""); resultsEl.insertAdjacentHTML("beforeend",`<div class="card"><div class="nosku">The label couldn't be read. Reload the app and try again, or type the name in search below.</div>${noSkuBtn()}</div>`); }
   finally{ busy=false; }
 }
+/* ---------- Whole shelf: AI lists every bottle in order, with barcodes to scan one after another ---------- */
+let SHELF=[]; // [{code, seen, count, confidence, shelf}]
+$("shelfPhoto").onchange=e=>runShelf(e.target);
+async function runShelf(input){
+  const file=input.files?.[0]; input.value=""; if(!file||busy) return;
+  if(!AI?.key){ toast("Shelf scan needs AI turned on in the manager page"); return; }
+  const url=URL.createObjectURL(file);
+  resultsEl.innerHTML=`<div class="preview"><img src="${url}" alt="Your shelf photo"><div><div class="label">Your shelf photo</div><div id="phase">Finding every bottle…</div></div></div>`;
+  if(!navigator.onLine){ resultsEl.insertAdjacentHTML("beforeend",`<div class="card"><div class="nosku">Shelf scan needs a connection. You're offline, so snap bottles one at a time instead, or try again when you have signal.</div></div>`); $("phase").textContent="Offline"; return; }
+  busy=true; lastFile=file;
+  try{
+    setStatus("The AI is finding every bottle on the shelf. This can take up to a minute…",true);
+    aiMod=aiMod||await import("./ai.js");
+    const img=await jpeg(file,2000,.85);
+    const { shelves }=await aiMod.aiShelf({key:AI.key,model:AI.model,imageDataUrl:img,items:ITEMS});
+    SHELF=shelves.flatMap((sh,si)=>sh.map(b=>({...b,shelf:si+1})));
+    setStatus(""); renderShelf(shelves.length);
+  }catch(e){ console.warn(e); setStatus("");
+    resultsEl.insertAdjacentHTML("beforeend",`<div class="card"><div class="nosku">${e?.name==="AbortError"?"The AI took too long. Try a photo of fewer shelves at a time.":"The shelf scan didn't go through. Check your signal and try again."}</div></div>`);
+    if($("phase")) $("phase").textContent="Didn't work"; }
+  finally{ busy=false; }
+}
+const shelfMatched=()=>SHELF.filter(b=>b.code&&byCode[b.code]);
+function renderShelf(nShelves){
+  const hits=shelfMatched(), miss=SHELF.length-hits.length, bottles=SHELF.reduce((a,b)=>a+b.count,0);
+  if($("phase")) $("phase").textContent=SHELF.length?`${bottles} bottle${bottles===1?"":"s"} found`:"No bottles found";
+  if(!SHELF.length){ resultsEl.insertAdjacentHTML("beforeend",`<div class="card"><div class="nosku">The AI couldn't make out any bottles. Step back so the labels face the camera, use good light, and try one or two shelves at a time.</div></div>`); return; }
+  let n=0, cur=0, html="";
+  for(const b of SHELF){
+    if(b.shelf!==cur){ cur=b.shelf; html+=`<div class="pghead" style="margin:0 -14px">Shelf ${cur}${cur===1?" (top)":""}</div>`; }
+    const r=b.code&&byCode[b.code], cnt=b.count>1?` · ×${b.count} side by side`:"";
+    if(r){ n++; html+=`<div class="shelfrow"><div class="n">${n}</div><div><div class="t">${esc(r[1])}</div>
+      <div class="s">${esc(r[2])} · ${pagesTxt(r[4])}${cnt}${b.confidence<.7?' · <b>check this one</b>':""}</div>${plate(r[0])}</div></div>`; }
+    else html+=`<div class="shelfrow miss"><div class="n">–</div><div><div class="t">Not on the sheets: ${esc(b.seen||"unknown bottle")}</div><div class="s">No barcode${cnt}. Add it on the No SKU tab if it needs one.</div></div></div>`;
+  }
+  resultsEl.insertAdjacentHTML("beforeend",`<div class="card">
+    <div class="label">${hits.length} item${hits.length===1?"":"s"} to scan, in shelf order${miss?` · ${miss} not on the sheets`:""}</div>
+    <p class="hint">Top shelf first, left to right. Bottles marked <b>check this one</b> are the AI's best guess, so glance at the label before scanning.</p>
+    ${hits.length?`<button class="btn btn-primary" type="button" data-stepstart="0">Scan them in order</button>`:""}
+    <div style="margin-top:8px">${html}</div></div>`);
+}
+// Step-through: one big barcode at a time with Back / Next.
+let STEP=-1;
+function openStep(i){
+  const list=shelfMatched(); if(!list.length) return;
+  if(i>=list.length){ ov.innerHTML=`<div class="big" style="letter-spacing:0">All ${list.length} done</div><div class="nm">Every matched bottle on the shelf has been shown.</div>
+    <div class="stepnav"><button type="button" data-sn="${list.length-1}">Back</button><button type="button" class="next" data-sn="close">Finish</button></div>`; STEP=list.length; ov.hidden=false; return; }
+  STEP=Math.max(0,i); const b=list[STEP], r=byCode[b.code]; lastFocus=lastFocus||document.activeElement;
+  ov.innerHTML=`<div class="pos">${STEP+1} of ${list.length} · Shelf ${b.shelf}${b.count>1?` · ×${b.count}`:""}</div>${barcodeSVG(r[0])}<div class="big">${r[0]}</div><div class="nm">${esc(r[2])} · ${esc(r[1])}</div>
+    <div class="stepnav"><button type="button" data-sn="${STEP-1}" ${STEP===0?"disabled":""}>Back</button><button type="button" class="next" data-sn="${STEP+1}">${STEP+1===list.length?"Done":"Next"}</button></div>
+    <div class="tip">Scan, then tap Next. Tap outside the buttons to stop.</div>`;
+  ov.hidden=false; ov.tabIndex=-1; ov.focus();
+}
+document.addEventListener("keydown",e=>{ if(ov.hidden||STEP<0) return;
+  if(e.key==="ArrowRight"){ e.preventDefault(); openStep(STEP+1); } else if(e.key==="ArrowLeft"&&STEP>0){ e.preventDefault(); openStep(STEP-1); } });
 /* ---------- AI photo match (online only) ---------- */
 let AI=ls.get("bcf-ai",null); // {key, model} set by a manager; shared with the team through Firebase
 const aiOn=()=>!!(AI?.key&&navigator.onLine);
@@ -271,6 +326,7 @@ document.addEventListener("click",async e=>{
   const tab=t.closest("[data-tab]"); if(tab){ showTab(tab.dataset.tab); return; }
   const f=t.closest("[data-full]"); if(f){ openFull(f.dataset.full); return; }
   const c=t.closest("[data-copy]"); if(c){ const tx=c.textContent; try{ await navigator.clipboard.writeText(c.dataset.copy); c.textContent="Copied"; }catch{ c.textContent=c.dataset.copy; } setTimeout(()=>c.textContent=tx,1400); return; }
+  const ss=t.closest("[data-stepstart]"); if(ss){ openStep(0); return; }
   const p=t.closest("[data-pick]"); if(p){ pick(p); return; }
   const w=t.closest("[data-wrongupc]"); if(w){ w.closest(".card").remove(); setStatus("Reading the label…",true);
     try{ lastText=await readLabel(lastFile); }catch{ lastText=""; } lastSig=await fileSig(lastFile).catch(()=>null); showCandidates(lastText,lastUPC,aiOn()?await askAI(lastFile):null); return; }
@@ -302,7 +358,9 @@ async function openFull(code){ const r=byCode[code]; if(!r) return; lastFocus=do
   ov.innerHTML=`${PHOTOS[code]?`<img class="shot" src="${PHOTOS[code].thumb}" data-img="${code}" alt="">`:""}${barcodeSVG(code)}<div class="big">${code}</div><div class="nm">${esc(r[2])} · ${esc(r[1])}</div><div class="tip">Turn screen brightness up. Tap anywhere to close.</div>`;
   ov.hidden=false; ov.tabIndex=-1; ov.focus(); hydrate(ov); }
 function openShot(src){ lastFocus=document.activeElement; ov.innerHTML=`<img class="shot" style="max-height:80vh;max-width:92vw" src="${src}" alt=""><div class="tip">Tap anywhere to close.</div>`; ov.hidden=false; }
-ov.onclick=()=>{ ov.hidden=true; lastFocus?.focus?.(); };
+ov.onclick=e=>{ const sn=e.target.closest?.("[data-sn]");
+  if(sn){ e.stopPropagation(); if(sn.dataset.sn!=="close"){ openStep(Number(sn.dataset.sn)); return; } }
+  ov.hidden=true; STEP=-1; lastFocus?.focus?.(); lastFocus=null; };
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!ov.hidden){ ov.hidden=true; } });
 /* ---------- How to use ---------- */
 function openHelp(){ $("help").hidden=false; $("help").scrollTop=0; $("helpClose").focus(); ls.set("bcf-help-seen",true); }
@@ -715,7 +773,7 @@ function openAdmin(){
 function closeAdmin(){ $("admin").hidden=true; ADM.unsub.forEach(f=>{ try{f();}catch{} }); ADM.unsub=[]; }
 $("adminClose").onclick=closeAdmin;
 /* ---------- Manager: AI key ---------- */
-function renderAI(){ const st=$("aiState"); if(!st) return;
+function renderAI(){ $("shelfBtn").hidden=!AI?.key; const st=$("aiState"); if(!st) return;
   st.textContent=AI?.key?`On. Using ${AI.model||"the default model"} when phones are online.`:"Off. Snaps use the on-phone barcode and label readers only.";
   $("aiOff").hidden=!AI?.key; if(!$("aiModel").value) $("aiModel").value=AI?.model||"gemini-3.5-flash-lite"; }
 $("aiSave").onclick=async()=>{ const key=$("aiKey").value.trim()||AI?.key, model=$("aiModel").value.trim(), msg=$("aiMsg"), b=$("aiSave");
@@ -860,7 +918,7 @@ async function start(code,fromLink){
   TEAM_CODE=code; ls.set("bcf-team",code);
   if(fromLink) history.replaceState(null,"",location.pathname);
   BASE_ITEMS=items; $("lock").hidden=true; $("app").hidden=false;
-  setItems(BASE_ITEMS); renderNoSku(); showTab(ls.get("bcf-tab","find")); if(!ls.get("bcf-help-seen",false)) openHelp();
+  setItems(BASE_ITEMS); renderNoSku(); renderAI(); showTab(ls.get("bcf-tab","find")); if(!ls.get("bcf-help-seen",false)) openHelp();
   startShared(await teamIdFor(code));
   return true;
 }

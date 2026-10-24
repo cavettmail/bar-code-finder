@@ -189,6 +189,15 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .arow .sub{color:var(--muted);font-size:.8rem}
 .undo-list{margin:6px 0 0;padding-left:18px;max-height:14em;overflow:auto;color:var(--muted);font-size:.88rem}
 .btn-danger.solid{background:var(--warn);color:var(--surface);border-color:var(--warn)}
+.shelfrow{display:grid;grid-template-columns:2rem 1fr;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);align-items:start}
+.shelfrow .n{font:600 1rem var(--mono);color:var(--muted);text-align:right;padding-top:2px}
+.shelfrow .t{font-weight:600}.shelfrow .s{font-size:.85rem;color:var(--muted);margin:2px 0 8px}
+.shelfrow.miss .t{color:var(--muted)}
+.overlay .stepnav{display:flex;gap:12px;width:min(92vw,720px)}
+.overlay .stepnav button{flex:1;font:700 1.2rem var(--body);padding:18px;border-radius:14px;border:2px solid #111;background:#fff;color:#111;cursor:pointer}
+.overlay .stepnav button.next{background:#111;color:#fff}
+.overlay .stepnav button:disabled{opacity:.3}
+.overlay .pos{font:600 .95rem var(--body);color:#555}
 </style>
 <script src="vendor/tesseract.min.js" defer></script>
 </head>
@@ -223,6 +232,10 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     <input id="photo" class="vh" type="file" accept="image/*" capture="environment">
     <label class="btn btn-quiet" id="libBtn" for="photoLib">Choose a photo</label>
     <input id="photoLib" class="vh" type="file" accept="image/*">
+    <label class="btn btn-quiet" id="shelfBtn" for="shelfPhoto" hidden>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 9h18M3 15h18M3 21h18"/><path d="M6 9V5h2v4M11 9V4h2v5M16 9V6h2v3M6 15v-3h2v3M11 15v-4h2v4M17 15v-3h2v3"/></svg>
+      Scan a whole shelf (AI)</label>
+    <input id="shelfPhoto" class="vh" type="file" accept="image/*" capture="environment">
     <p class="hint">Fill the frame with the front label, held straight. If the bottle's own barcode is in the shot, the app reads that too. Tap the right match and it remembers for next time.</p>
     <div id="status" class="status" hidden></div>
     <div id="blocked" class="nosku blocked" hidden><span id="blockedMsg">The camera is blocked in this view. Open the app in Chrome instead.</span><button class="btn btn-primary" id="openBrowser" type="button">Open in Chrome</button></div>
@@ -288,6 +301,7 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     <li>Fill the frame with the front label, held straight. Include the bottle's barcode if you can.</li>
     <li>Tap the match that's right. The app remembers it, so it gets faster for everyone.</li>
     <li>Online, the AI also looks at the photo and its pick shows first, marked <b>AI match</b>. With no signal, the app still reads the barcode and label on your phone.</li>
+    <li><b>Scan a whole shelf</b>: take one photo of a shelf or wall (online only). The AI lists every bottle top shelf first, left to right, with its barcode. Tap <b>Scan them in order</b> to get one big barcode at a time: scan it, tap <b>Next</b>.</li>
     <li>Scan the big barcode on the card with your scanner. Tap it to go full screen and turn your brightness up.</li></ol>
     <p class="hint" style="margin-top:8px">No luck? Type the producer or name in the search box instead.</p></section>
   <section><h3>Add bottle photos</h3><ul>
@@ -351,6 +365,6 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 </div></div>
 <div class="toast" id="toast" hidden role="status"></div>
 <div class="overlay" id="overlay" hidden role="dialog" aria-label="Barcode, full screen"></div>
-<script type="module" src="app.js?v=5"></script>
+<script type="module" src="app.js?v=6"></script>
 </body>
 </html>
