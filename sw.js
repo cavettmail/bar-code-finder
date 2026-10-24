@@ -1,5 +1,5 @@
 // Keeps the app working with a weak signal: the app files load from the phone, then update in the background.
-const VERSION = "bcf-v4";
+const VERSION = "bcf-v5";
 const SHELL = ["./", "index.html", "app.js", "store.js", "config.js", "manifest.webmanifest", "data/items.enc.json", "icon-192.png", "ai.js"];
 // The label reader (engine + English data) and barcode reader, so snaps work with no signal from day one.
 const BIG = ["vendor/tesseract.min.js", "vendor/zxing.min.js", "vendor/ocr/worker.min.js", "vendor/ocr/eng.traineddata.gz",
@@ -23,7 +23,7 @@ self.addEventListener("fetch", e => {
     e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => { if (res.ok) caches.open(VERSION).then(c => c.put(req, res.clone())); return res; })));
     return;
   }
-  // App files: newest from the network, phone copy when offline.
-  e.respondWith(fetch(req).then(res => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); } return res; })
-    .catch(() => caches.match(req).then(hit => hit || caches.match("index.html"))));
+  // App files: newest from the network (skipping the browser's 10-minute cache, so the page and its code always match), phone copy when offline.
+  e.respondWith(fetch(req, { cache: "no-cache" }).then(res => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); } return res; })
+    .catch(() => caches.match(req, { ignoreSearch: true }).then(hit => hit || caches.match("index.html"))));
 });
