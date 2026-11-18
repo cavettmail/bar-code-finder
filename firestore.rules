@@ -47,9 +47,14 @@ service cloud.firestore {
         allow read, update, delete: if isAdmin();
         allow create: if canUse();
       }
-      // Shared photos, barcodes, No SKU list, item list.
+      // The item list changes for everyone, so only managers can change it.
+      match /catalog/{doc} {
+        allow read: if canUse();
+        allow write: if isAdmin();
+      }
+      // Shared photos, barcodes, No SKU list, counts.
       match /{collection}/{doc} {
-        allow read, write: if canUse() && !(collection in ["admins", "members", "revoked", "approved", "config", "history", "histData"]);
+        allow read, write: if canUse() && !(collection in ["admins", "members", "revoked", "approved", "config", "history", "histData", "catalog"]);
       }
     }
   }

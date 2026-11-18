@@ -1,15 +1,20 @@
 // Shared storage for the team (Google Firebase / Firestore).
 // Everything lives under teams/<team id>/..., and the team id comes from the team code in the app link.
-const V = "10.14.1";
-const BASE = `https://www.gstatic.com/firebasejs/${V}/`;
+export const FB_SDK = "https://www.gstatic.com/firebasejs/12.19.0/";
 
-export async function connect(config, teamId) {
+export async function connect(config, teamId, appCheckKey) {
   const [{ initializeApp }, auth, fs] = await Promise.all([
-    import(BASE + "firebase-app.js"),
-    import(BASE + "firebase-auth.js"),
-    import(BASE + "firebase-firestore.js"),
+    import(FB_SDK + "firebase-app.js"),
+    import(FB_SDK + "firebase-auth.js"),
+    import(FB_SDK + "firebase-firestore.js"),
   ]);
   const app = initializeApp(config);
+  // App Check proves requests come from this app, so the AI can't be used by anyone who copies the Firebase settings.
+  if (appCheckKey) {
+    try { const ac = await import(FB_SDK + "firebase-app-check.js");
+      ac.initializeAppCheck(app, { provider: new ac.ReCaptchaEnterpriseProvider(appCheckKey), isTokenAutoRefreshEnabled: true });
+    } catch (e) { console.warn("App Check didn't start", e); }
+  }
   const a = auth.getAuth(app);
   const cred = await auth.signInAnonymously(a);
   let db;
@@ -22,7 +27,7 @@ export async function connect(config, teamId) {
     const r = fs.doc(db, full(path));
     return {
       id: r.id,
-      set: d => fs.setDoc(r, d),
+      set: (d, opts) => opts ? fs.setDoc(r, d, opts) : fs.setDoc(r, d),
       update: d => fs.updateDoc(r, d),
       delete: () => fs.deleteDoc(r),
       get: async () => docSnap(await fs.getDoc(r)),
@@ -55,6 +60,7 @@ export async function connect(config, teamId) {
     };
   };
   return {
+    app,
     collection: query, doc: docRef, batch,
     uid: cred.user.uid,
     newId: path => fs.doc(fs.collection(db, full(path))).id,

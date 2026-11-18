@@ -198,6 +198,12 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .overlay .stepnav button.next{background:#111;color:#fff}
 .overlay .stepnav button:disabled{opacity:.3}
 .overlay .pos{font:600 .95rem var(--body);color:#555}
+/* Live scan: camera on top, the matched item underneath */
+.live{position:fixed;inset:0;background:#0d100f;z-index:9;display:flex;flex-direction:column;overflow:auto}
+.live .lhd{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;color:#fff;font:600 1.05rem var(--body)}
+.live video{width:100%;max-height:46vh;object-fit:cover;background:#000;flex:none}
+.live .lout{padding:12px 16px 32px;display:grid;gap:12px;max-width:640px;width:100%;margin:0 auto}
+.updbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:35;display:flex;gap:12px;align-items:center;background:var(--ink);color:var(--bg);padding:8px 8px 8px 16px;border-radius:99px;font:600 .9rem var(--body);max-width:calc(100vw - 32px)}
 </style>
 <script src="vendor/tesseract.min.js" defer></script>
 </head>
@@ -230,6 +236,9 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
       Snap a bottle
     </label>
     <input id="photo" class="vh" type="file" accept="image/*" capture="environment">
+    <button class="btn btn-quiet" id="liveBtn" type="button">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
+      Live scan bottle barcodes</button>
     <label class="btn btn-quiet" id="libBtn" for="photoLib">Choose a photo</label>
     <input id="photoLib" class="vh" type="file" accept="image/*">
     <label class="btn btn-quiet" id="shelfBtn" for="shelfPhoto" hidden>
@@ -257,6 +266,7 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
   <div class="panel" data-panel="count" hidden>
     <section class="snap" aria-label="Count summary">
       <div class="sum"><div><b id="cItems">0</b> <span class="count">items counted</span></div><div><b id="cBottles">0</b> <span class="count">bottles</span></div></div>
+      <p class="hint" id="cMode" style="font-weight:600"></p>
       <p class="hint" id="cHint">Find a bottle (snap, search, or a pinned item) and enter its count on the item card. Use decimals for open bottles: 3.4 means 3 full plus about 4 tenths.</p>
       <div class="btn-row">
         <button class="btn btn-quiet" id="cCopy" type="button">Copy count</button>
@@ -302,6 +312,7 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     <li>Tap the match that's right. The app remembers it, so it gets faster for everyone.</li>
     <li>Online, the AI also looks at the photo and its pick shows first, marked <b>AI match</b>. With no signal, the app still reads the barcode and label on your phone.</li>
     <li><b>Scan a whole shelf</b>: take one photo of a shelf or wall (online only). The AI lists every bottle top shelf first, left to right, with its barcode. Tap <b>Scan them in order</b> to get one big barcode at a time: scan it, tap <b>Next</b>.</li>
+    <li><b>Live scan bottle barcodes</b>: point the camera at one bottle's barcode after another. Linked bottles show their inventory barcode straight away. For one that isn't linked yet, tap <b>Look it up with a photo</b> and pick the right item.</li>
     <li>Scan the big barcode on the card with your scanner. Tap it to go full screen and turn your brightness up.</li></ol>
     <p class="hint" style="margin-top:8px">No luck? Type the producer or name in the search box instead.</p></section>
   <section><h3>Add bottle photos</h3><ul>
@@ -312,12 +323,13 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     <li>Find an item and type its count on the card, or use +1 / −1.</li>
     <li>Open bottles use decimals: 3.4 means 3 full plus about 4 tenths.</li>
     <li>The <b>Count</b> tab shows totals by sheet page. Copy it or download a spreadsheet when you're done.</li>
-    <li><b>Start a new count</b> clears it. Counts stay on your phone only.</li></ol></section>
+    <li>Everyone on the team counts into the same count. Each person's number is kept separately and added up, so two people can count the same item in different spots.</li>
+    <li><b>Start a new count</b> sets it back to zero for everyone. A manager can undo that.</li></ol></section>
   <section><h3>Bottle not on the sheets?</h3><ol>
     <li>Tap <b>Not on the sheets? Add it to the No SKU list</b> after a snap, or use <b>Add a bottle</b> on the No SKU tab.</li>
     <li>Add a short note (name, size).</li>
     <li>The whole team sees the list. Tap <b>SKU added</b> once it's set up, or <b>Copy list</b> to send it on.</li></ol></section>
-  <section><h3>New inventory sheets</h3><ol>
+  <section><h3>New inventory sheets (managers)</h3><ol>
     <li>On <b>Sheets</b>, tap <b>Upload new sheets</b> and pick the inventory report PDF (or an Excel/CSV export).</li>
     <li>For Excel or CSV, confirm which column is the item code, name, and so on. The PDF report is read automatically, including page numbers and categories.</li>
     <li>Check what's added and removed. Tap <b>Add the new items</b> to keep everything already there, or <b>Replace with this list</b>. It updates for everyone.</li></ol></section>
@@ -341,9 +353,8 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     <div class="list" id="ppl"><div class="empty">Loading…</div></div>
   </section>
   <section><h3>AI photo search</h3>
-    <p class="hint">When a phone is online, snapped photos are also checked by Google's Gemini AI against the item list, which catches worn labels and look-alike bottles. Offline, the app still reads barcodes and label text on the phone. Everyone on the team uses the key you add here; they never see or need it.</p>
+    <p class="hint">When a phone is online, snapped photos are also checked by Google's Gemini AI against the item list, which catches worn labels and look-alike bottles. Offline, the app still reads barcodes and label text on the phone. The AI runs through the app's Firebase project (Firebase console → AI Logic), so there's no key on anyone's phone.</p>
     <p id="aiState" class="hint" style="font-weight:600"></p>
-    <label class="field"><span class="label">Gemini API key</span><input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the key from Google AI Studio"></label>
     <label class="field"><span class="label">Model (leave as is unless it stops working)</span><input id="aiModel" autocomplete="off" spellcheck="false"></label>
     <div class="btn-row"><button class="btn btn-primary" id="aiSave" type="button">Test and turn on</button><button class="btn btn-quiet" id="aiOff" type="button" hidden>Turn AI off</button></div>
     <p class="hint" id="aiMsg" aria-live="polite"></p>
@@ -354,7 +365,7 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     <p class="hint" id="encMsg" aria-live="polite"></p>
   </section>
   <section><h3>Undo changes</h3>
-    <p class="hint">Puts photos, linked barcodes, the No SKU list and the item list back the way they were. Counts stay on each phone and aren't affected.</p>
+    <p class="hint">Puts photos, linked barcodes, the No SKU list, the item list and "Start a new count" back the way they were. Numbers typed into a count aren't undone one by one.</p>
     <label class="field"><span class="label">Undo everything changed in the last</span><select id="undoDays"></select></label>
     <label class="field"><span class="label">Changes made by</span><select id="undoWho"><option value="">Everyone</option></select></label>
     <div id="undoPrev"></div>
@@ -365,6 +376,22 @@ header h1{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 </div></div>
 <div class="toast" id="toast" hidden role="status"></div>
 <div class="overlay" id="overlay" hidden role="dialog" aria-label="Barcode, full screen"></div>
-<script type="module" src="app.js?v=7"></script>
+<div class="live" id="live" hidden role="dialog" aria-modal="true" aria-label="Live scan">
+  <div class="lhd"><b>Live scan</b><button class="install" id="liveClose" type="button">Done</button></div>
+  <video id="liveVideo" playsinline muted></video>
+  <div class="lout" id="liveOut" aria-live="polite"></div>
+</div>
+<div class="updbar" id="updBar" hidden role="status"><span>A new version of the app is ready.</span><button class="install" id="updBtn" type="button">Reload</button></div>
+<!-- The app's code, in order: each file can use what the files before it set up. -->
+<script src="js/core.js" defer></script>
+<script src="js/scan.js" defer></script>
+<script src="js/ui.js" defer></script>
+<script src="js/count.js" defer></script>
+<script src="js/nosku.js" defer></script>
+<script src="js/sheets.js" defer></script>
+<script src="js/shared.js" defer></script>
+<script src="js/admin.js" defer></script>
+<script src="js/livescan.js" defer></script>
+<script src="js/main.js" defer></script>
 </body>
 </html>
